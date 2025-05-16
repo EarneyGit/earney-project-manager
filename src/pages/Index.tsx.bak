@@ -1,0 +1,762 @@
+import React, { useState, useMemo, useEffect } from "react";
+import { useProjects } from "../contexts/ProjectContext";
+import { Project, ProjectStatus, ProjectPriority } from "../types/project";
+import ProjectForm from "../components/ProjectForm";
+import { formatDate } from "../lib/utils";
+import { Button } from "../components/ui/button";
+import { Progress } from "../components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import { Input } from "../components/ui/input";
+import { 
+  Plus, 
+  Search, 
+  SortAsc, 
+  SortDesc, 
+  Edit, 
+  Trash2,
+  PieChart,
+  BarChart as BarChartIcon,
+  LineChart
+} from "lucide-react";
+import { Badge } from "../components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import {
+  PieChart as RechartsPieChart,
+  Pie,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell
+} from "recharts";
+import { useAuth } from "../contexts/AuthContext";
+import { useLocation } from "react-router-dom";
+
+const Index = () => {
+  const { projects, deleteProject, updateProject } = useProjects();
+  const { isAdmin, isEditor, currentUser } = useAuth();
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"deadline" | "name">("deadline");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [editingCell, setEditingCell] = useState<{
+    id: string;
+    field: 'status' | 'priority' | 'advancePayment' | 'partialPayments' | null;
+  }>({ id: '', field: null });
+
+  useEffect(() => {
+    if (location.state?.openNewProjectForm) {
+      handleAddNew();
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
+  const handleEditProject = (project: Project) => {
+    setEditingProject(project);
+    setOpen(true);
+  };
+
+  const handleAddNew = () => {
+    setEditingProject(null);
+    setOpen(true);
+  };
+
+  const toggleSort = () => {
+    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+  };
+
+  const getStatusStyle = (status: ProjectStatus) => {
+    switch (status) {
+      case ProjectStatus.NOT_STARTED:
+        return "bg-white text-black border border-black";
+      case ProjectStatus.IN_PROGRESS:
+        return "bg-black text-white";
+      case ProjectStatus.COMPLETED:
+        return "bg-white text-black border border-black line-through";
+      default:
+        return "bg-white text-black border border-black";
+    }
+  };
+
+  const getPriorityStyle = (priority: string) => {
+    switch (priority) {
+      case "Low":
+        return "bg-[#F2FCE2] text-black border border-green-300";
+      case "Medium":
+        return "bg-[#FEF7CD] text-black border border-yellow-300";
+      case "High":
+        return "bg-[#FEC6A1] text-black border border-orange-300";
+      case "Urgent":
+        return "bg-[#ea384c] text-white";
+      default:
+        return "bg-white text-black border border-black";
+    }
+  };
+
+  const calculateProgress = (startTime: string, deadline: string) => {
+    const start = new Date(startTime).getTime();
+    const end = new Date(deadline).getTime();
+    const now = new Date().getTime();
+    
+    if (now <= start) return { progress: 0, remainingDays: 0 };
+    if (now >= end) return { progress: 100, remainingDays: 0 };
+    
+    const total = end - start;
+    const current = now - start;
+    const progress = Math.round((current / total) * 100);
+    
+    const remainingDays = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
+    
+    return { progress, remainingDays };
+  };
+
+  const calculatePendingPayment = (budget: number = 0, advancePayment: number = 0, partialPayments: number | any[] = 0) => {
+    const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
+    return Math.max(0, budget - (advancePayment + partialPaymentsValue));
+  };
+
+  const handleCellEdit = async (project: Project, field: string, value: any) => {
+    try {
+      const updates: Partial<Project> = { [field]: value };
+      
+      if (field === 'budget' || field === 'advancePayment' || field === 'partialPayments') {
+        const budget = field === 'budget' ? value : (project.budget || 0);
+        const advancePayment = field === 'advancePayment' ? value : (project.advancePayment || 0);
+        const partialPayments = field === 'partialPayments' ? value : (project.partialPayments || 0);
+        
+        await updateProject(project.id, updates);
+        setEditingCell({ id: '', field: null });
+      }
+    } catch (error) {
+      console.error('Error updating project:', error);
+    }
+  };
+
+  const dashboardStats = useMemo(() => {
+    const safeProjects = Array.isArray(projects) ? projects : [];
+    const totalProjects = safeProjects.length;
+    const totalBudget = safeProjects.reduce((sum, project) => sum + (project.budget || 0), 0);
+    const totalAdvancePayment = safeProjects.reduce((sum, project) => sum + (project.advancePayment || 0), 0);
+    
+    const totalPartialPaymentsValue = safeProjects.reduce((sum, project) => {
+      const partialPayments = project.partialPayments || 0;
+      const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
+      return sum + partialPaymentsValue;
+    }, 0);
+    
+    const totalPendingPayment = safeProjects.reduce((sum, project) => {
+      const budget = project.budget || 0;
+      const advancePayment = project.advancePayment || 0;
+      const partialPayments = project.partialPayments || 0;
+      const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
+      const pendingPayment = Math.max(0, budget - (advancePayment + partialPaymentsValue));
+      return sum + pendingPayment;
+    }, 0);
+    
+    const totalCollectedPayment = totalAdvancePayment + totalPartialPaymentsValue;
+    const totalProjectValue = totalCollectedPayment + totalPendingPayment;
+    
+    const statusCounts = safeProjects.reduce((acc, project) => {
+      acc[project.status] = (acc[project.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const statusData = Object.entries(statusCounts).map(([name, value]) => ({
+      name, value
+    }));
+    
+    const priorityCounts = safeProjects.reduce((acc, project) => {
+      acc[project.priority] = (acc[project.priority] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const priorityData = Object.entries(priorityCounts).map(([name, value]) => ({
+      name, value
+    }));
+    
+    const paymentData = [
+      { name: "Advance Payment", value: totalAdvancePayment },
+      { name: "Partial Payments", value: totalPartialPaymentsValue },
+      { name: "Pending Payment", value: totalPendingPayment }
+    ];
+    
+    const budgetVsPaymentData = [
+      { name: "Total Budget", value: totalBudget },
+      { name: "Collected", value: totalCollectedPayment },
+      { name: "Pending", value: totalPendingPayment }
+    ];
+    
+    return {
+      totalProjects,
+      totalBudget,
+      totalAdvancePayment,
+      totalPartialPayments: totalPartialPaymentsValue,
+      totalPendingPayment,
+      totalCollectedPayment,
+      totalProjectValue,
+      statusData,
+      priorityData,
+      paymentData,
+      budgetVsPaymentData
+    };
+  }, [projects]);
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+
+  const filteredProjects = useMemo(() => {
+    if (!Array.isArray(projects)) {
+      return [];
+    }
+    return projects
+      .filter((project) => {
+        const matchesSearch = project.name
+          .toLowerCase()
+          .includes(search.toLowerCase()) ||
+          project.assignedTo.some(assignee => 
+            assignee.toLowerCase().includes(search.toLowerCase())
+          );
+
+        const matchesStatus =
+          statusFilter === "all" || project.status === statusFilter;
+
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (sortBy === "deadline") {
+          return sortOrder === "asc"
+            ? new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+            : new Date(b.deadline).getTime() - new Date(a.deadline).getTime();
+        } else {
+          return sortOrder === "asc"
+            ? a.name.localeCompare(b.name)
+            : b.name.localeCompare(a.name);
+        }
+      });
+  }, [projects, search, statusFilter, sortBy, sortOrder]);
+
+  // Added welcome message for editors who haven't seen any projects yet
+  const renderEmptyState = () => {
+    return (
+      <div className="text-center py-20">
+        <h2 className="text-2xl font-bold mb-2">Welcome, {currentUser?.name || 'Editor'}</h2>
+        <p className="text-gray-500 mb-6">No projects found</p>
+        {(isAdmin || isEditor) && (
+          <Button onClick={handleAddNew} variant="outline">
+            <Plus size={16} className="mr-1" /> Create your first project
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-white">
+      <main className="container mx-auto p-4">
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+              <Input
+                placeholder="Search projects..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 items-center justify-end w-full sm:w-auto">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
+                  <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
+                  <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={sortBy} onValueChange={(value) => setSortBy(value as "deadline" | "name")}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="deadline">Deadline</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button variant="outline" size="icon" onClick={toggleSort}>
+                {sortOrder === "asc" ? <SortAsc size={18} /> : <SortDesc size={18} />}
+              </Button>
+              
+              {(isAdmin || isEditor) && (
+                <Button 
+                  onClick={handleAddNew} 
+                  className="bg-black text-white hover:bg-gray-800"
+                >
+                  <Plus size={16} className="mr-1" /> New Project
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Project list section */}
+        {filteredProjects.length === 0 ? (
+          renderEmptyState()
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Assigned To</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>Due Date</TableHead>
+                  <TableHead>Timeline</TableHead>
+                  {isAdmin && (
+                    <>
+                      <TableHead>Budget</TableHead>
+                      <TableHead>Advance Payment</TableHead>
+                      <TableHead>Partial Payments</TableHead>
+                      <TableHead>Pending Payment</TableHead>
+                    </>
+                  )}
+                  {(isAdmin || isEditor) && (
+                    <TableHead className="text-right">Actions</TableHead>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProjects.map((project) => (
+                  <TableRow key={project.id}>
+                    <TableCell className="font-medium">{project.name}</TableCell>
+                    <TableCell>
+                      {editingCell.id === project.id && editingCell.field === 'status' ? (
+                        <Select
+                          defaultValue={project.status}
+                          onValueChange={(value) => handleCellEdit(project, 'status', value)}
+                        >
+                          <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.values(ProjectStatus).map((status) => (
+                              <SelectItem key={status} value={status}>
+                                {status}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div
+                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: 'status' })}
+                          className={`cursor-pointer ${getStatusStyle(project.status)}`}
+                        >
+                          <Badge className={getStatusStyle(project.status)}>
+                            {project.status}
+                          </Badge>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingCell.id === project.id && editingCell.field === 'priority' ? (
+                        <Select
+                          defaultValue={project.priority}
+                          onValueChange={(value) => handleCellEdit(project, 'priority', value)}
+                        >
+                          <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Select priority" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.values(ProjectPriority).map((priority) => (
+                              <SelectItem key={priority} value={priority}>
+                                {priority}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div
+                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: 'priority' })}
+                          className="cursor-pointer"
+                        >
+                          <Badge className={getPriorityStyle(project.priority)}>
+                            {project.priority}
+                          </Badge>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {Array.isArray(project.assignedTo) ? (
+                          project.assignedTo.map((person, index) => (
+                            <Badge key={index} variant="outline">
+                              {person}
+                            </Badge>
+                          ))
+                        ) : (
+                          <Badge variant="outline">{project.assignedTo}</Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>{formatDate(project.startTime)}</TableCell>
+                    <TableCell>{formatDate(project.deadline)}</TableCell>
+                    <TableCell className="w-[200px]">
+                      <div className="flex flex-col">
+                        <Progress 
+                          value={calculateProgress(project.startTime, project.deadline).progress}
+                          className="h-2 mb-1"
+                        />
+                        <span className="text-xs text-gray-500">
+                          {calculateProgress(project.startTime, project.deadline).remainingDays} days left
+                        </span>
+                      </div>
+                    </TableCell>
+                    {isAdmin && (
+                      <>
+                        <TableCell>₹{project.budget?.toFixed(2) || '0.00'}</TableCell>
+                        <TableCell>
+                          {editingCell.id === project.id && editingCell.field === 'advancePayment' ? (
+                            <Input
+                              type="number"
+                              defaultValue={project.advancePayment || 0}
+                              onBlur={(e) => handleCellEdit(project, 'advancePayment', parseFloat(e.target.value) || 0)}
+                              autoFocus
+                              className="w-24"
+                            />
+                          ) : (
+                            <div
+                              onClick={() => isAdmin && setEditingCell({ id: project.id, field: 'advancePayment' })}
+                              className="cursor-pointer"
+                            >
+                              ₹{project.advancePayment?.toFixed(2) || '0.00'}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {editingCell.id === project.id && editingCell.field === 'partialPayments' ? (
+                            <Input
+                              type="number"
+                              defaultValue={project.partialPayments || 0}
+                              onBlur={(e) => handleCellEdit(project, 'partialPayments', parseFloat(e.target.value) || 0)}
+                              autoFocus
+                              className="w-24"
+                            />
+                          ) : (
+                            <div
+                              onClick={() => isAdmin && setEditingCell({ id: project.id, field: 'partialPayments' })}
+                              className="cursor-pointer"
+                            >
+                              ₹{project.partialPayments?.toFixed(2) || '0.00'}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          ₹{calculatePendingPayment(
+                            project.budget, 
+                            project.advancePayment, 
+                            project.partialPayments
+                          ).toFixed(2)}
+                        </TableCell>
+                      </>
+                    )}
+                    {(isAdmin || isEditor) && (
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditProject(project)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Edit size={16} />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteProject(project.id)}
+                            className="h-8 w-8 p-0"
+                            disabled={!isAdmin}
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+                
+                {isAdmin && filteredProjects && Array.isArray(filteredProjects) && filteredProjects.length > 0 && (
+                  <TableRow className="bg-gray-100 font-bold">
+                    <TableCell colSpan={7}>Totals</TableCell>
+                    <TableCell>
+                      ₹
+                      {filteredProjects
+                        .reduce((acc, project) => acc + (project.budget || 0), 0)
+                        .toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      ₹
+                      {filteredProjects
+                        .reduce((acc, project) => acc + (project.advancePayment || 0), 0)
+                        .toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      ₹
+                      {filteredProjects
+                        .reduce((acc, project) => {
+                          const partialPayments = project.partialPayments || 0;
+                          return acc + (typeof partialPayments === 'number' ? partialPayments : 0);
+                        }, 0)
+                        .toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      ₹
+                      {filteredProjects
+                        .reduce((acc, project) => {
+                          return acc + calculatePendingPayment(
+                            project.budget, 
+                            project.advancePayment, 
+                            project.partialPayments
+                          );
+                        }, 0)
+                        .toFixed(2)}
+                    </TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Insights section - making it available for editors too but with project stats only */}
+        <div className="mt-12 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Project Insights</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  Total Projects
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{dashboardStats.totalProjects}</div>
+              </CardContent>
+            </Card>
+            
+            {isAdmin && (
+              <>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-500">
+                      Total Budget
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      ₹{dashboardStats.totalBudget.toFixed(2)}
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-500">
+                      Total Collected
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      ₹{dashboardStats.totalCollectedPayment.toFixed(2)}
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="p-4">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle className="text-md font-medium flex items-center">
+                  <PieChart className="mr-2 h-5 w-5" />
+                  Project Status Distribution
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={dashboardStats.statusData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        paddingAngle={5}
+                        dataKey="value"
+                        label={({name, percent}) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {dashboardStats.statusData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => [`${value} projects`, 'Count']} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="p-4">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle className="text-md font-medium flex items-center">
+                  <LineChart className="mr-2 h-5 w-5" />
+                  Project Priority Breakdown
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={dashboardStats.priorityData}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip formatter={(value: number) => [`${value} projects`, 'Count']} />
+                      <Legend />
+                      <Bar dataKey="value" fill="#82ca9d">
+                        {dashboardStats.priorityData.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={
+                              entry.name === "Urgent" ? "#ea384c" : 
+                              entry.name === "High" ? "#FEC6A1" : 
+                              entry.name === "Medium" ? "#FFBB28" : 
+                              "#82ca9d"
+                            } 
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            
+            {/* Financial charts only visible to admins */}
+            {isAdmin && (
+              <>
+                <Card className="p-4">
+                  <CardHeader className="px-0 pt-0">
+                    <CardTitle className="text-md font-medium flex items-center">
+                      <BarChartIcon className="mr-2 h-5 w-5" />
+                      Payment Distribution
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-0 pb-0">
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={dashboardStats.paymentData}
+                          margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Amount']} />
+                          <Legend />
+                          <Bar dataKey="value" fill="#8884d8">
+                            {dashboardStats.paymentData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="p-4">
+                  <CardHeader className="px-0 pt-0">
+                    <CardTitle className="text-md font-medium flex items-center">
+                      <BarChartIcon className="mr-2 h-5 w-5" />
+                      Budget vs Payments
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-0 pb-0">
+                    <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={dashboardStats.budgetVsPaymentData}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis allowDecimals={false} />
+                          <Tooltip formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Amount']} />
+                          <Legend />
+                          <Bar dataKey="value" fill="#8884d8">
+                            {dashboardStats.budgetVsPaymentData.map((entry, index) => (
+                              <Cell 
+                                key={`cell-${index}`} 
+                                fill={
+                                  entry.name === "Total Budget" ? "#8884d8" : 
+                                  entry.name === "Collected" ? "#82ca9d" : 
+                                  "#ea384c"
+                                } 
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
+        </div>
+      </main>
+
+      <ProjectForm
+        open={open}
+        onOpenChange={setOpen}
+        editingProject={editingProject}
+      />
+    </div>
+  );
+};
+
+export default Index;

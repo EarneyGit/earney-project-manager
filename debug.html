@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supabase Connection Test</title>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    button {
+      padding: 10px 15px;
+      background: #0070f3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    button:hover {
+      background: #0051a9;
+    }
+    .error {
+      color: red;
+    }
+    .success {
+      color: green;
+    }
+  </style>
+</head>
+<body>
+  <h1>Supabase Connection Test</h1>
+  
+  <button id="testConnection">Test Connection</button>
+  <button id="testTableExists">Check Tables</button>
+  <button id="clearLocalStorage">Clear localStorage</button>
+  
+  <h2>Results:</h2>
+  <pre id="output">Click a button to run tests...</pre>
+  
+  <script>
+    // Supabase configuration constants
+    const SUPABASE_URL = "https://mpuzbroregxvzhjqlrjo.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1wdXpicm9yZWd4dnpoanFscmpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU0NDA2MzcsImV4cCI6MjA2MTAxNjYzN30.vDR3zD_OUXlrTtfW84Sauyrf16547bmfFX7CGyJAncw";
+    
+    // Create Supabase client
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    
+    const outputEl = document.getElementById('output');
+    
+    function log(message, isError = false) {
+      if (typeof message === 'object') {
+        message = JSON.stringify(message, null, 2);
+      }
+      
+      const className = isError ? 'error' : 'success';
+      outputEl.innerHTML += `<div class="${className}">${message}</div>`;
+      console.log(message);
+    }
+    
+    document.getElementById('testConnection').addEventListener('click', async () => {
+      outputEl.innerHTML = '';
+      try {
+        log('Testing Supabase connection...');
+        
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('count');
+        
+        if (error) {
+          throw error;
+        }
+        
+        log('Connection successful!');
+        log(data);
+      } catch (error) {
+        log('Connection failed:', true);
+        log(error, true);
+      }
+    });
+    
+    document.getElementById('testTableExists').addEventListener('click', async () => {
+      outputEl.innerHTML = '';
+      
+      // Test projects table
+      try {
+        log('Checking projects table...');
+        const { data, error } = await supabase
+          .from('projects')
+          .select('count');
+        
+        if (error) {
+          log('Projects table error:', true);
+          log(error, true);
+        } else {
+          log(`Projects table exists! Count: ${data[0]?.count || 0}`);
+        }
+      } catch (error) {
+        log('Error checking projects table:', true);
+        log(error, true);
+      }
+      
+      // Test project_members table
+      try {
+        log('Checking project_members table...');
+        const { data, error } = await supabase
+          .from('project_members')
+          .select('count');
+        
+        if (error) {
+          log('Project_members table error:', true);
+          log(error, true);
+        } else {
+          log(`Project_members table exists! Count: ${data[0]?.count || 0}`);
+        }
+      } catch (error) {
+        log('Error checking project_members table:', true);
+        log(error, true);
+      }
+    });
+    
+    document.getElementById('clearLocalStorage').addEventListener('click', () => {
+      outputEl.innerHTML = '';
+      try {
+        log('Checking localStorage...');
+        const projectsBefore = localStorage.getItem('projects');
+        log(`Projects in localStorage before: ${projectsBefore ? 'YES' : 'NO'}`);
+        
+        if (projectsBefore) {
+          log(`Projects data: ${projectsBefore}`);
+          localStorage.removeItem('projects');
+          log('Cleared projects from localStorage');
+        }
+        
+        const projectsAfter = localStorage.getItem('projects');
+        log(`Projects in localStorage after: ${projectsAfter ? 'YES' : 'NO'}`);
+      } catch (error) {
+        log('Error accessing localStorage:', true);
+        log(error, true);
+      }
+    });
+  </script>
+</body>
+</html> 
