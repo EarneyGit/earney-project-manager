@@ -1,25 +1,33 @@
-import * as api from './api';
+import { projectApi } from './api-client';
 import { Project } from '@/types/project';
 
 class ProjectService {
-  async getProjects(): Promise<Project[]> {
-    return api.fetchProjects();
+  async getProjects(params?: { status?: string; priority?: string; search?: string }) {
+    return projectApi.getAll(params);
   }
 
-  async getProject(id: string): Promise<Project> {
-    return api.fetchProjectById(id);
+  async getProject(id: string) {
+    return projectApi.get(id);
   }
 
-  async createProject(project: Partial<Project>): Promise<Project> {
-    return api.createProject(project);
+  async createProject(project: any) {
+    return projectApi.create(project);
   }
 
-  async updateProject(id: string, project: Partial<Project>): Promise<Project> {
-    return api.updateProject(id, project);
+  async updateProject(id: string, project: any) {
+    return projectApi.update(id, project);
   }
 
-  async deleteProject(id: string): Promise<void> {
-    return api.deleteProject(id);
+  async deleteProject(id: string) {
+    return projectApi.delete(id);
+  }
+
+  async addTeamMember(id: string, userId: string) {
+    return projectApi.addTeamMember(id, userId);
+  }
+
+  async removeTeamMember(id: string, userId: string) {
+    return projectApi.removeTeamMember(id, userId);
   }
 }
 

@@ -1,13 +1,11 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from "react";
-import { v4 as uuidv4 } from "uuid";
 import { Project } from "@/types/project";
 import { toast } from "@/hooks/use-toast";
+import { projectService } from "@/services/project-service";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Check if we're in development environment
 const isDev = import.meta.env.DEV;
-
-// Local storage key
-const STORAGE_KEY = "projects_data";
 
 // Create context with proper type
 interface ProjectContextType {
@@ -38,194 +36,149 @@ export const useProjects = () => {
 // This fixes HMR issues
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start with false, only load when authenticated
   const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
 
-  // Save projects to localStorage
-  const saveProjectsToStorage = (projectsData: Project[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projectsData));
-    } catch (err) {
-      console.error("Error saving to localStorage:", err);
+  // Fetch all projects from API - only if authenticated
+  const fetchProjects = useCallback(async (silent = false) => {
+    if (!isAuthenticated) {
+      console.log('Skipping project fetch - user not authenticated');
+      return;
     }
-  };
 
-  // Fetch all projects from localStorage
-  const fetchProjects = useCallback(async () => {
     try {
-      setLoading(true);
-      console.log('Fetching projects from localStorage...');
-      
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const storedProjects = localStorage.getItem(STORAGE_KEY);
-      const data = storedProjects ? JSON.parse(storedProjects) : [];
-      
-      console.log('Projects fetched successfully:', data.length + ' projects');
-      setProjects(data);
+      if (!silent) {
+        setLoading(true);
+      } 
+      const data = await projectService.getProjects();
+      console.log('Fetched projects:', data); // Debug log
+      setProjects(Array.isArray(data) ? data : []);
       setError(null);
-    } catch (err) {
-      console.error("Error fetching projects:", err);
-      setError("Failed to load projects");
-      
+    } catch (err: any) {
+      console.error('Error fetching projects:', err); // Debug log
+      setError(err?.message || "Failed to load projects");
+      setProjects([]); // Set empty array on error
       toast({
         variant: "destructive",
         title: "Error loading projects",
-        description: err.message || "There was a problem loading projects from local storage."
+        description: err?.message || "There was a problem loading projects from the API."
       });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
-  // Initialize projects on component mount
+  // Clear projects when user logs out
   useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+    if (!isAuthenticated && !authLoading) {
+      console.log('User not authenticated - clearing projects');
+      setProjects([]);
+      setError(null);
+      setLoading(false);
+    }
+  }, [isAuthenticated, authLoading]);
 
-  // Calculate pending payment based on other values
-  const calculatePendingPayment = (project: Partial<Project>) => {
-    const budget = project.budget || 0;
-    const advancePayment = project.advancePayment || 0;
-    const partialPayments = project.partialPayments || 0;
-    const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-    
-    return Math.max(0, budget - (advancePayment + partialPaymentsValue));
-  };
+  // Initialize projects when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      console.log('User authenticated - fetching projects');
+      fetchProjects();
+    }
+  }, [isAuthenticated, authLoading, fetchProjects]);
 
-  // Add a new project
+  // Add a new project - only if authenticated
   const addProject = async (project: Partial<Project>) => {
+    if (!isAuthenticated) {
+      throw new Error("Authentication required to create projects");
+    }
+
     try {
-      console.log('Adding new project to localStorage...');
-      
-      const pendingPayment = calculatePendingPayment(project);
-      const newProject = { 
-        ...project, 
-        id: uuidv4(),
-        pendingPayment
-      } as Project;
-      
-      // Add to local state
-      const updatedProjects = [...projects, newProject];
-      setProjects(updatedProjects);
-      
-      // Save to localStorage
-      saveProjectsToStorage(updatedProjects);
-      
+      const newProject = await projectService.createProject(project);
+      await fetchProjects(true);
       toast({
         title: "Project created",
         description: "Project has been successfully saved."
       });
-      
       return newProject;
-    } catch (err) {
-      console.error("Error adding project:", err);
-      
+    } catch (err: any) {
+      console.error('Error creating project:', err);
       toast({
         variant: "destructive",
         title: "Error creating project",
-        description: err.message || "Failed to save project."
+        description: err?.message || "Failed to save project."
       });
-      
       throw err;
     }
   };
 
-  // Update an existing project
+  // Update an existing project - only if authenticated
   const updateProject = async (id: string, updatedProjectData: Partial<Project>) => {
+    if (!isAuthenticated) {
+      throw new Error("Authentication required to update projects");
+    }
+
     try {
-      // Find the project to update
-      const projectToUpdate = projects.find(p => p.id === id);
-      if (!projectToUpdate) {
-        throw new Error(`Project with ID ${id} not found`);
-      }
-      
-      // Merge the updated data with existing project data
-      const mergedProject = { ...projectToUpdate, ...updatedProjectData };
-      
-      // Calculate pending payment based on the merged data
-      const pendingPayment = calculatePendingPayment(mergedProject);
-      
-      // Add pending payment to the update data
-      const finalUpdateData = { 
-        ...updatedProjectData, 
-        pendingPayment 
-      };
-      
-      // Update in local state
-      const updatedProjects = projects.map(project =>
-        project.id === id ? { ...project, ...finalUpdateData } : project
-      );
-      
-      setProjects(updatedProjects);
-      
-      // Save to localStorage
-      saveProjectsToStorage(updatedProjects);
-      
+      const updatedProject = await projectService.updateProject(id, updatedProjectData);
+      await fetchProjects(true);
       toast({
         title: "Project updated",
         description: "Changes have been saved."
       });
-      
-      return { ...projectToUpdate, ...finalUpdateData } as Project;
-    } catch (err) {
-      console.error("Error updating project:", err);
-      
+      return updatedProject;
+    } catch (err: any) {
+      console.error('Error updating project:', err);
       toast({
         variant: "destructive",
         title: "Error updating project",
-        description: err.message || "Failed to save changes."
+        description: err?.message || "Failed to save changes."
       });
-      
       throw err;
     }
   };
 
-  // Delete a project
+  // Delete a project - only if authenticated
   const deleteProject = async (id: string) => {
+    if (!isAuthenticated) {
+      throw new Error("Authentication required to delete projects");
+    }
+
     try {
-      // Remove from local state
-      const filteredProjects = projects.filter(project => project.id !== id);
-      setProjects(filteredProjects);
-      
-      // Save to localStorage
-      saveProjectsToStorage(filteredProjects);
-      
+      await projectService.deleteProject(id);
+      setProjects(prev => prev?.filter(project => {
+        const projectId = project?._id || project?.id;
+        return projectId !== id;
+      }) || []);
       toast({
         title: "Project deleted",
         description: "Project has been removed."
       });
-    } catch (err) {
-      console.error("Error deleting project:", err);
-      
+    } catch (err: any) {
+      console.error('Error deleting project:', err);
       toast({
         variant: "destructive",
         title: "Error deleting project",
-        description: err.message || "Failed to delete the project."
+        description: err?.message || "Failed to delete the project."
       });
-      
       throw err;
     }
   };
 
-  // Get a project by ID
+  // Get a project by ID - only if authenticated
   const getProjectById = async (id: string) => {
+    if (!isAuthenticated) {
+      throw new Error("Authentication required to access projects");
+    }
+
     try {
-      const project = projects.find(p => p.id === id);
-      if (!project) {
-        throw new Error(`Project with ID ${id} not found`);
-      }
-      return project;
-    } catch (err) {
-      console.error("Error fetching project by ID:", err);
-      
+      return await projectService.getProject(id);
+    } catch (err: any) {
+      console.error('Error loading project by ID:', err);
       toast({
         variant: "destructive",
         title: "Error loading project",
-        description: err.message || "Failed to retrieve project details."
+        description: err?.message || "Failed to retrieve project details."
       });
-      
       throw err;
     }
   };

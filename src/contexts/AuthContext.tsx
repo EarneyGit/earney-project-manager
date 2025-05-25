@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
+import { authApi } from "@/services/api-client";
 
 // Define user roles
 export enum UserRole {
@@ -31,118 +32,68 @@ interface AuthContextType {
 // Create auth context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Specific user accounts
-const ADMIN_USER: AuthUser = {
-  id: 'admin-id',
-  email: 'hello@earney.in',
-  name: 'Admin User',
-  role: UserRole.ADMIN
-};
-
-const EDITOR_USER: AuthUser = {
-  id: 'editor-id',
-  email: 'earneyworks@gmail.com',
-  name: 'Editor User',
-  role: UserRole.EDITOR
-};
-
-// Local storage key for user data
-const USER_STORAGE_KEY = 'earney_user';
+const AUTH_TOKEN_KEY = 'auth_token';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<Error | null>(null);
 
-  // Check for stored user on initial load
+  // On mount, check for token and fetch user
   useEffect(() => {
-    const loadStoredUser = () => {
-      try {
-        const storedUser = localStorage.getItem(USER_STORAGE_KEY);
-        if (storedUser) {
-          setCurrentUser(JSON.parse(storedUser));
-          console.log('User loaded from storage');
+    const checkAuth = async () => {
+      const token = localStorage?.getItem(AUTH_TOKEN_KEY);
+      if (token) {
+        try {
+          setIsLoading(true);
+          const data = await authApi.getCurrentUser();
+          setCurrentUser(data?.data?.user || null);
+        } catch (error) {
+          setCurrentUser(null);
+          localStorage?.removeItem(AUTH_TOKEN_KEY);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Error loading user from storage:', error);
-      } finally {
+      } else {
         setIsLoading(false);
       }
     };
-
-    loadStoredUser();
+    checkAuth();
   }, []);
 
-  // Helper to store user in localStorage
-  const storeUser = (user: AuthUser | null) => {
-    try {
-      if (user) {
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-      } else {
-        localStorage.removeItem(USER_STORAGE_KEY);
-      }
-    } catch (error) {
-      console.error('Error storing user:', error);
-    }
-  };
-
-  // Update currentUser and store in localStorage
-  const updateUser = (user: AuthUser | null) => {
-    setCurrentUser(user);
-    storeUser(user);
-  };
-
-  // Login function
   const login = async (email: string, password: string) => {
     try {
-      console.log("Attempting login for:", email);
       setIsLoading(true);
-      
-      // Specific predefined users
-      if (email === 'hello@earney.in' && password === 'Lokkav@0321$') {
-        console.log("Admin login successful");
-        updateUser(ADMIN_USER);
-        setAuthError(null);
-        toast({
-          title: "Login Successful",
-          description: "Welcome, Admin!"
-        });
-        return;
-      } else if (email === 'earneyworks@gmail.com' && password === 'Earneypro@123') {
-        console.log("Editor login successful");
-        updateUser(EDITOR_USER);
-        setAuthError(null);
-        toast({
-          title: "Login Successful",
-          description: "Welcome, Editor!"
-        });
-        return;
-      }
-      
-      // If not a predefined user, authentication fails
-      throw new Error("Invalid email or password");
+      setAuthError(null);
+      const { data } = await authApi.login({ email, password });
+      const { token, user } = data || {};
+      console.log("token", data);
+      await localStorage?.setItem(AUTH_TOKEN_KEY, token);
+      setCurrentUser(user || null);
+      toast({
+        title: "Login Successful",
+        description: `Welcome, ${user?.name || 'User'}!`
+      });
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (error: any) {
-      console.error("Login error:", error);
-      setAuthError(error instanceof Error ? error : new Error(error.message || "Login failed"));
+      setAuthError(error instanceof Error ? error : new Error(error?.message || "Login failed"));
       throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Logout function
   const logout = async () => {
     try {
-      console.log("Logging out user");
       setIsLoading(true);
-      updateUser(null);
-      setAuthError(null);
+      setCurrentUser(null);
+      await localStorage?.removeItem(AUTH_TOKEN_KEY);
       toast({
         title: "Logged out",
         description: "You have been successfully logged out"
       });
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (error: any) {
-      console.error("Logout error:", error);
       setAuthError(error instanceof Error ? error : new Error('Logout failed'));
       throw error;
     } finally {
@@ -150,14 +101,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Register function
   const register = async (email: string, password: string, name: string, role: UserRole) => {
     try {
-      console.log("Registration is disabled");
-      throw new Error("Registration is not allowed. Please use the provided login credentials.");
+      setIsLoading(true);
+      setAuthError(null);
+      const response = await authApi.register({ email, password, name });
+      const { token, user } = response || {};
+      await localStorage?.setItem(AUTH_TOKEN_KEY, token);
+      setCurrentUser(user || null);
+      toast({
+        title: "Registration Successful",
+        description: "Your account has been created successfully!"
+      });
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (error: any) {
-      console.error("Registration error:", error);
-      setAuthError(error instanceof Error ? error : new Error(error.message || "Registration failed"));
+      setAuthError(error instanceof Error ? error : new Error(error?.message || "Registration failed"));
       throw error;
     } finally {
       setIsLoading(false);

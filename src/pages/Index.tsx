@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect } from "react";
 import { useProjects } from "@/contexts/ProjectContext";
-import { Project, ProjectStatus, ProjectPriority } from "@/types/project";
+import { Project, ProjectStatus, ProjectPriority, User } from "@/types/project";
 import ProjectForm from "@/components/ProjectForm";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -52,7 +51,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "react-router-dom";
 
 const Index = () => {
-  const { projects, deleteProject, updateProject } = useProjects();
+  const { projects, deleteProject, updateProject, loading, error } = useProjects();
   const { isAdmin, isEditor, currentUser } = useAuth();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -63,15 +62,50 @@ const Index = () => {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [editingCell, setEditingCell] = useState<{
     id: string;
-    field: 'status' | 'priority' | 'advancePayment' | 'partialPayments' | null;
+    field: 'status' | 'priority' | 'budget' | 'advancePayment' | 'partialPayments' | null;
   }>({ id: '', field: null });
 
+  // Helper functions to handle populated fields
+  const getTeamMemberDisplay = (member: string | User) => {
+    if (typeof member === 'string') {
+      return member;
+    }
+    return member?.name || 'Unknown User';
+  };
+
+  const getManagerDisplay = (manager: string | User) => {
+    if (typeof manager === 'string') {
+      return manager;
+    }
+    return manager?.name || 'Unknown Manager';
+  };
+
+  const getTeamSearchableText = (team: (string | User)[]) => {
+    return team?.map(member => {
+      if (typeof member === 'string') {
+        return member;
+      }
+      return `${member?.name || ''} ${member?.email || ''}`;
+    }).join(' ') || '';
+  };
+
+  const getManagerSearchableText = (manager: string | User) => {
+    if (typeof manager === 'string') {
+      return manager;
+    }
+    return `${manager?.name || ''} ${manager?.email || ''}`;
+  };
+
+  const calculatePendingPayment = (budget: number = 0, advancePayment: number = 0, partialPayments: number = 0) => {
+    return Math.max(0, budget - (advancePayment + partialPayments));
+  };
+
   useEffect(() => {
-    if (location.state?.openNewProjectForm) {
+    if (location?.state?.openNewProjectForm) {
       handleAddNew();
       window.history.replaceState({}, document.title);
     }
-  }, [location.state]);
+  }, [location?.state]);
 
   const handleEditProject = (project: Project) => {
     setEditingProject(project);
@@ -87,36 +121,66 @@ const Index = () => {
     setSortOrder(sortOrder === "asc" ? "desc" : "asc");
   };
 
-  const getStatusStyle = (status: ProjectStatus) => {
+  const getStatusStyle = (status: string) => {
     switch (status) {
-      case ProjectStatus.NOT_STARTED:
+      case 'not-started':
         return "bg-white text-black border border-black";
-      case ProjectStatus.IN_PROGRESS:
+      case 'in-progress':
         return "bg-black text-white";
-      case ProjectStatus.COMPLETED:
-        return "bg-white text-black border border-black line-through";
+      case 'completed':
+        return "bg-green-100 text-green-800 border border-green-300";
+      case 'on-hold':
+        return "bg-yellow-100 text-yellow-800 border border-yellow-300";
       default:
         return "bg-white text-black border border-black";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'not-started':
+        return "Not Started";
+      case 'in-progress':
+        return "In Progress";
+      case 'completed':
+        return "Completed";
+      case 'on-hold':
+        return "On Hold";
+      default:
+        return status || 'Unknown';
     }
   };
 
   const getPriorityStyle = (priority: string) => {
     switch (priority) {
-      case "Low":
+      case "low":
         return "bg-[#F2FCE2] text-black border border-green-300";
-      case "Medium":
+      case "medium":
         return "bg-[#FEF7CD] text-black border border-yellow-300";
-      case "High":
+      case "high":
         return "bg-[#FEC6A1] text-black border border-orange-300";
-      case "Urgent":
-        return "bg-[#ea384c] text-white";
       default:
         return "bg-white text-black border border-black";
     }
   };
 
-  const calculateProgress = (startTime: string, deadline: string) => {
-    const start = new Date(startTime).getTime();
+  const getPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case "low":
+        return "Low";
+      case "medium":
+        return "Medium";
+      case "high":
+        return "High";
+      default:
+        return priority || 'Unknown';
+    }
+  };
+
+  const calculateProgress = (startDate: string, deadline: string) => {
+    if (!startDate || !deadline) return { progress: 0, remainingDays: 0 };
+    
+    const start = new Date(startDate).getTime();
     const end = new Date(deadline).getTime();
     const now = new Date().getTime();
     
@@ -132,23 +196,20 @@ const Index = () => {
     return { progress, remainingDays };
   };
 
-  const calculatePendingPayment = (budget: number = 0, advancePayment: number = 0, partialPayments: number | any[] = 0) => {
-    const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-    return Math.max(0, budget - (advancePayment + partialPaymentsValue));
-  };
-
   const handleCellEdit = async (project: Project, field: string, value: any) => {
     try {
       const updates: Partial<Project> = { [field]: value };
       
+      // If updating a payment field, recalculate pending payment
       if (field === 'budget' || field === 'advancePayment' || field === 'partialPayments') {
-        const budget = field === 'budget' ? value : (project.budget || 0);
-        const advancePayment = field === 'advancePayment' ? value : (project.advancePayment || 0);
-        const partialPayments = field === 'partialPayments' ? value : (project.partialPayments || 0);
-        
-        await updateProject(project.id, updates);
-        setEditingCell({ id: '', field: null });
+        const budget = field === 'budget' ? value : (project?.budget || 0);
+        const advancePayment = field === 'advancePayment' ? value : (project?.advancePayment || 0);
+        const partialPayments = field === 'partialPayments' ? value : (project?.partialPayments || 0);
+        updates.pendingPayment = calculatePendingPayment(budget, advancePayment, partialPayments);
       }
+      
+      await updateProject(project?._id || project?.id || "", updates);
+      setEditingCell({ id: '', field: null });
     } catch (error) {
       console.error('Error updating project:', error);
     }
@@ -156,66 +217,60 @@ const Index = () => {
 
   const dashboardStats = useMemo(() => {
     const safeProjects = Array.isArray(projects) ? projects : [];
-    const totalProjects = safeProjects.length;
-    const totalBudget = safeProjects.reduce((sum, project) => sum + (project.budget || 0), 0);
-    const totalAdvancePayment = safeProjects.reduce((sum, project) => sum + (project.advancePayment || 0), 0);
+    const totalProjects = safeProjects?.length || 0;
     
-    const totalPartialPaymentsValue = safeProjects.reduce((sum, project) => {
-      const partialPayments = project.partialPayments || 0;
-      const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-      return sum + partialPaymentsValue;
-    }, 0);
+    // Financial calculations - budget, advancePayment, partialPayments are required fields
+    const totalBudget = safeProjects?.reduce((sum, project) => sum + (project?.budget || 0), 0) || 0;
+    const totalAdvancePayment = safeProjects?.reduce((sum, project) => sum + (project?.advancePayment || 0), 0) || 0;
+    const totalPartialPayments = safeProjects?.reduce((sum, project) => sum + (project?.partialPayments || 0), 0) || 0;
+    const totalPendingPayment = safeProjects?.reduce((sum, project) => {
+      return sum + calculatePendingPayment(project?.budget, project?.advancePayment, project?.partialPayments);
+    }, 0) || 0;
+    const totalCollectedPayment = totalAdvancePayment + totalPartialPayments;
     
-    const totalPendingPayment = safeProjects.reduce((sum, project) => {
-      const budget = project.budget || 0;
-      const advancePayment = project.advancePayment || 0;
-      const partialPayments = project.partialPayments || 0;
-      const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-      const pendingPayment = Math.max(0, budget - (advancePayment + partialPaymentsValue));
-      return sum + pendingPayment;
-    }, 0);
-    
-    const totalCollectedPayment = totalAdvancePayment + totalPartialPaymentsValue;
-    const totalProjectValue = totalCollectedPayment + totalPendingPayment;
-    
-    const statusCounts = safeProjects.reduce((acc, project) => {
-      acc[project.status] = (acc[project.status] || 0) + 1;
+    const statusCounts = safeProjects?.reduce((acc, project) => {
+      const status = project?.status || 'unknown';
+      acc[status] = (acc[status] || 0) + 1;
       return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, number>) || {};
     
     const statusData = Object.entries(statusCounts).map(([name, value]) => ({
-      name, value
+      name: getStatusLabel(name), 
+      value
     }));
     
-    const priorityCounts = safeProjects.reduce((acc, project) => {
-      acc[project.priority] = (acc[project.priority] || 0) + 1;
+    const priorityCounts = safeProjects?.reduce((acc, project) => {
+      const priority = project?.priority || 'unknown';
+      acc[priority] = (acc[priority] || 0) + 1;
       return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, number>) || {};
     
     const priorityData = Object.entries(priorityCounts).map(([name, value]) => ({
-      name, value
+      name: getPriorityLabel(name), 
+      value
     }));
     
+    // Payment distribution data - always show all categories
     const paymentData = [
-      { name: "Advance Payment", value: totalAdvancePayment },
-      { name: "Partial Payments", value: totalPartialPaymentsValue },
-      { name: "Pending Payment", value: totalPendingPayment }
+      { name: "Advance Payment", value: totalAdvancePayment, color: "#0088FE" },
+      { name: "Partial Payments", value: totalPartialPayments, color: "#00C49F" },
+      { name: "Pending Payment", value: totalPendingPayment, color: "#FFBB28" }
     ];
     
+    // Budget vs Payment data - always show all categories
     const budgetVsPaymentData = [
-      { name: "Total Budget", value: totalBudget },
-      { name: "Collected", value: totalCollectedPayment },
-      { name: "Pending", value: totalPendingPayment }
+      { name: "Total Budget", value: totalBudget, color: "#8884d8" },
+      { name: "Collected", value: totalCollectedPayment, color: "#82ca9d" },
+      { name: "Pending", value: totalPendingPayment, color: "#ffc658" }
     ];
     
     return {
       totalProjects,
       totalBudget,
       totalAdvancePayment,
-      totalPartialPayments: totalPartialPaymentsValue,
+      totalPartialPayments,
       totalPendingPayment,
       totalCollectedPayment,
-      totalProjectValue,
       statusData,
       priorityData,
       paymentData,
@@ -230,37 +285,59 @@ const Index = () => {
       return [];
     }
     return projects
-      .filter((project) => {
-        const matchesSearch = project.name
-          .toLowerCase()
-          .includes(search.toLowerCase()) ||
-          project.assignedTo.some(assignee => 
-            assignee.toLowerCase().includes(search.toLowerCase())
-          );
+      ?.filter((project) => {
+        const matchesSearch = project?.name
+          ?.toLowerCase()
+          ?.includes(search?.toLowerCase() || '') ||
+          (project?.description && project?.description?.toLowerCase()?.includes(search?.toLowerCase() || '')) ||
+          (project?.clientName && project?.clientName?.toLowerCase()?.includes(search?.toLowerCase() || '')) ||
+          getTeamSearchableText(project?.team || [])?.toLowerCase()?.includes(search?.toLowerCase() || '') ||
+          getManagerSearchableText(project?.manager)?.toLowerCase()?.includes(search?.toLowerCase() || '');
 
         const matchesStatus =
-          statusFilter === "all" || project.status === statusFilter;
+          statusFilter === "all" || project?.status === statusFilter;
 
         return matchesSearch && matchesStatus;
       })
-      .sort((a, b) => {
+      ?.sort((a, b) => {
         if (sortBy === "deadline") {
-          return sortOrder === "asc"
-            ? new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
-            : new Date(b.deadline).getTime() - new Date(a.deadline).getTime();
+          const aDate = new Date(a?.deadline || '').getTime();
+          const bDate = new Date(b?.deadline || '').getTime();
+          return sortOrder === "asc" ? aDate - bDate : bDate - aDate;
         } else {
           return sortOrder === "asc"
-            ? a.name.localeCompare(b.name)
-            : b.name.localeCompare(a.name);
+            ? (a?.name || '').localeCompare(b?.name || '')
+            : (b?.name || '').localeCompare(a?.name || '');
         }
-      });
+      }) || [];
   }, [projects, search, statusFilter, sortBy, sortOrder]);
 
-  // Added welcome message for editors who haven't seen any projects yet
+  const renderLoadingState = () => {
+    return (
+      <div className="text-center py-20">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto mb-4"></div>
+        <h2 className="text-xl font-semibold mb-2">Loading Projects...</h2>
+        <p className="text-gray-500">Please wait while we fetch your projects</p>
+      </div>
+    );
+  };
+
+  const renderErrorState = () => {
+    return (
+      <div className="text-center py-20">
+        <h2 className="text-xl font-semibold mb-2 text-red-600">Error Loading Projects</h2>
+        <p className="text-gray-500 mb-4">{error}</p>
+        <Button onClick={() => window.location.reload()} variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  };
+
   const renderEmptyState = () => {
     return (
       <div className="text-center py-20">
-        <h2 className="text-2xl font-bold mb-2">Welcome, {currentUser?.name || 'Editor'}</h2>
+        <h2 className="text-2xl font-bold mb-2">Welcome, {currentUser?.name || 'User'}</h2>
         <p className="text-gray-500 mb-6">No projects found</p>
         {(isAdmin || isEditor) && (
           <Button onClick={handleAddNew} variant="outline">
@@ -270,6 +347,28 @@ const Index = () => {
       </div>
     );
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white">
+        <main className="container mx-auto p-4">
+          {renderLoadingState()}
+        </main>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-white">
+        <main className="container mx-auto p-4">
+          {renderErrorState()}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -293,9 +392,10 @@ const Index = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
-                  <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
-                  <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
+                  <SelectItem value="not-started">Not Started</SelectItem>
+                  <SelectItem value="in-progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="on-hold">On Hold</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -334,159 +434,158 @@ const Index = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Project Name</TableHead>
+                  <TableHead>Client Name</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Priority</TableHead>
-                  <TableHead>Assigned To</TableHead>
+                  <TableHead>Manager</TableHead>
+                  <TableHead>Team Members</TableHead>
                   <TableHead>Start Date</TableHead>
-                  <TableHead>Due Date</TableHead>
+                  <TableHead>Deadline</TableHead>
                   <TableHead>Timeline</TableHead>
-                  {isAdmin && (
-                    <>
-                      <TableHead>Budget</TableHead>
-                      <TableHead>Advance Payment</TableHead>
-                      <TableHead>Partial Payments</TableHead>
-                      <TableHead>Pending Payment</TableHead>
-                    </>
-                  )}
+                  <TableHead>Budget</TableHead>
+                  <TableHead>Advance Payment</TableHead>
+                  <TableHead>Partial Payments</TableHead>
+                  <TableHead>Pending Payment</TableHead>
                   {(isAdmin || isEditor) && (
                     <TableHead className="text-right">Actions</TableHead>
                   )}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProjects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.name}</TableCell>
+                {filteredProjects?.map((project) => (
+                  <TableRow key={project?._id || project?.id}>
+                    <TableCell className="font-medium">{project?.name || 'Untitled Project'}</TableCell>
+                    <TableCell className="font-medium">{project?.clientName || 'N/A'}</TableCell>
+                    <TableCell className="max-w-xs">
+                      <div className="truncate" title={project?.description || ''}>
+                        {project?.description || 'No description'}
+                      </div>
+                    </TableCell>
                     <TableCell>
-                      {editingCell.id === project.id && editingCell.field === 'status' ? (
+                      {editingCell?.id === (project?._id || project?.id) && editingCell?.field === 'status' ? (
                         <Select
-                          defaultValue={project.status}
+                          defaultValue={project?.status}
                           onValueChange={(value) => handleCellEdit(project, 'status', value)}
                         >
                           <SelectTrigger className="w-[200px]">
                             <SelectValue placeholder="Select status" />
                           </SelectTrigger>
                           <SelectContent>
-                            {Object.values(ProjectStatus).map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="not-started">Not Started</SelectItem>
+                            <SelectItem value="in-progress">In Progress</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="on-hold">On Hold</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
                         <div
-                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: 'status' })}
-                          className={`cursor-pointer ${getStatusStyle(project.status)}`}
+                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project?._id || project?.id || "", field: 'status' })}
+                          className="cursor-pointer"
                         >
-                          <Badge className={getStatusStyle(project.status)}>
-                            {project.status}
+                          <Badge className={getStatusStyle(project?.status || '')}>
+                            {getStatusLabel(project?.status || '')}
                           </Badge>
                         </div>
                       )}
                     </TableCell>
                     <TableCell>
-                      {editingCell.id === project.id && editingCell.field === 'priority' ? (
+                      {editingCell?.id === (project?._id || project?.id) && editingCell?.field === 'priority' ? (
                         <Select
-                          defaultValue={project.priority}
+                          defaultValue={project?.priority}
                           onValueChange={(value) => handleCellEdit(project, 'priority', value)}
                         >
                           <SelectTrigger className="w-[200px]">
                             <SelectValue placeholder="Select priority" />
                           </SelectTrigger>
                           <SelectContent>
-                            {Object.values(ProjectPriority).map((priority) => (
-                              <SelectItem key={priority} value={priority}>
-                                {priority}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
                         <div
-                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: 'priority' })}
+                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project?._id || project?.id || "", field: 'priority' })}
                           className="cursor-pointer"
                         >
-                          <Badge className={getPriorityStyle(project.priority)}>
-                            {project.priority}
+                          <Badge className={getPriorityStyle(project?.priority || '')}>
+                            {getPriorityLabel(project?.priority || '')}
                           </Badge>
                         </div>
                       )}
                     </TableCell>
                     <TableCell>
+                      <Badge variant="secondary">
+                        {getManagerDisplay(project?.manager)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {Array.isArray(project.assignedTo) ? (
-                          project.assignedTo.map((person, index) => (
+                        {project?.team && project?.team?.length > 0 ? (
+                          project?.team?.map((member, index) => (
                             <Badge key={index} variant="outline">
-                              {person}
+                              {getTeamMemberDisplay(member)}
                             </Badge>
                           ))
                         ) : (
-                          <Badge variant="outline">{project.assignedTo}</Badge>
+                          <span className="text-gray-500">No team members</span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>{formatDate(project.startTime)}</TableCell>
-                    <TableCell>{formatDate(project.deadline)}</TableCell>
+                    <TableCell>{formatDate(project?.startDate || '')}</TableCell>
+                    <TableCell>{formatDate(project?.deadline || '')}</TableCell>
                     <TableCell className="w-[200px]">
                       <div className="flex flex-col">
                         <Progress 
-                          value={calculateProgress(project.startTime, project.deadline).progress}
+                          value={calculateProgress(project?.startDate || '', project?.deadline || '')?.progress || 0}
                           className="h-2 mb-1"
                         />
                         <span className="text-xs text-gray-500">
-                          {calculateProgress(project.startTime, project.deadline).remainingDays} days left
+                          {calculateProgress(project?.startDate || '', project?.deadline || '')?.remainingDays || 0} days left
                         </span>
                       </div>
                     </TableCell>
-                    {isAdmin && (
-                      <>
-                        <TableCell>₹{project.budget?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell>
-                          {editingCell.id === project.id && editingCell.field === 'advancePayment' ? (
-                            <Input
-                              type="number"
-                              defaultValue={project.advancePayment || 0}
-                              onBlur={(e) => handleCellEdit(project, 'advancePayment', parseFloat(e.target.value) || 0)}
-                              autoFocus
-                              className="w-24"
-                            />
-                          ) : (
-                            <div
-                              onClick={() => isAdmin && setEditingCell({ id: project.id, field: 'advancePayment' })}
-                              className="cursor-pointer"
-                            >
-                              ₹{project.advancePayment?.toFixed(2) || '0.00'}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {editingCell.id === project.id && editingCell.field === 'partialPayments' ? (
-                            <Input
-                              type="number"
-                              defaultValue={project.partialPayments || 0}
-                              onBlur={(e) => handleCellEdit(project, 'partialPayments', parseFloat(e.target.value) || 0)}
-                              autoFocus
-                              className="w-24"
-                            />
-                          ) : (
-                            <div
-                              onClick={() => isAdmin && setEditingCell({ id: project.id, field: 'partialPayments' })}
-                              className="cursor-pointer"
-                            >
-                              ₹{project.partialPayments?.toFixed(2) || '0.00'}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          ₹{calculatePendingPayment(
-                            project.budget, 
-                            project.advancePayment, 
-                            project.partialPayments
-                          ).toFixed(2)}
-                        </TableCell>
-                      </>
-                    )}
+                    <TableCell>₹{(project?.budget || 0)?.toFixed(2)}</TableCell>
+                    <TableCell>
+                      {editingCell?.id === (project?._id || project?.id) && editingCell?.field === 'advancePayment' ? (
+                        <Input
+                          type="number"
+                          defaultValue={project?.advancePayment || 0}
+                          onBlur={(e) => handleCellEdit(project, 'advancePayment', parseFloat(e.target.value) || 0)}
+                          autoFocus
+                          className="w-24"
+                        />
+                      ) : (
+                        <div
+                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project?._id || project?.id || "", field: 'advancePayment' })}
+                          className="cursor-pointer"
+                        >
+                          ₹{(project?.advancePayment || 0)?.toFixed(2)}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingCell?.id === (project?._id || project?.id) && editingCell?.field === 'partialPayments' ? (
+                        <Input
+                          type="number"
+                          defaultValue={project?.partialPayments || 0}
+                          onBlur={(e) => handleCellEdit(project, 'partialPayments', parseFloat(e.target.value) || 0)}
+                          autoFocus
+                          className="w-24"
+                        />
+                      ) : (
+                        <div
+                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project?._id || project?.id || "", field: 'partialPayments' })}
+                          className="cursor-pointer"
+                        >
+                          ₹{(project?.partialPayments || 0)?.toFixed(2)}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      ₹{calculatePendingPayment(project?.budget, project?.advancePayment, project?.partialPayments)?.toFixed(2)}
+                    </TableCell>
                     {(isAdmin || isEditor) && (
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -501,7 +600,7 @@ const Index = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => deleteProject(project.id)}
+                            onClick={() => deleteProject(project?._id || project?.id || "")}
                             className="h-8 w-8 p-0"
                             disabled={!isAdmin}
                           >
@@ -513,43 +612,23 @@ const Index = () => {
                   </TableRow>
                 ))}
                 
-                {isAdmin && filteredProjects && Array.isArray(filteredProjects) && filteredProjects.length > 0 && (
+                {/* Totals row */}
+                {filteredProjects?.length > 0 && (
                   <TableRow className="bg-gray-100 font-bold">
-                    <TableCell colSpan={7}>Totals</TableCell>
+                    <TableCell colSpan={9}>Totals</TableCell>
                     <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => acc + (project.budget || 0), 0)
-                        .toFixed(2)}
+                      ₹{filteredProjects?.reduce((acc, project) => acc + (project?.budget || 0), 0)?.toFixed(2)}
                     </TableCell>
                     <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => acc + (project.advancePayment || 0), 0)
-                        .toFixed(2)}
+                      ₹{filteredProjects?.reduce((acc, project) => acc + (project?.advancePayment || 0), 0)?.toFixed(2)}
                     </TableCell>
                     <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => {
-                          const partialPayments = project.partialPayments || 0;
-                          return acc + (typeof partialPayments === 'number' ? partialPayments : 0);
-                        }, 0)
-                        .toFixed(2)}
+                      ₹{filteredProjects?.reduce((acc, project) => acc + (project?.partialPayments || 0), 0)?.toFixed(2)}
                     </TableCell>
                     <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => {
-                          return acc + calculatePendingPayment(
-                            project.budget, 
-                            project.advancePayment, 
-                            project.partialPayments
-                          );
-                        }, 0)
-                        .toFixed(2)}
+                      ₹{filteredProjects?.reduce((acc, project) => acc + calculatePendingPayment(project?.budget, project?.advancePayment, project?.partialPayments), 0)?.toFixed(2)}
                     </TableCell>
-                    <TableCell></TableCell>
+                    {(isAdmin || isEditor) && <TableCell></TableCell>}
                   </TableRow>
                 )}
               </TableBody>
@@ -557,11 +636,11 @@ const Index = () => {
           </div>
         )}
 
-        {/* Insights section - making it available for editors too but with project stats only */}
+        {/* Insights section */}
         <div className="mt-12 mb-8">
           <h2 className="text-xl font-semibold mb-4">Project Insights</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-gray-500">
@@ -573,55 +652,64 @@ const Index = () => {
               </CardContent>
             </Card>
             
-            {isAdmin && (
-              <>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">
-                      Total Budget
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      ₹{dashboardStats.totalBudget.toFixed(2)}
-                    </div>
-                  </CardContent>
-                </Card>
-                
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">
-                      Total Collected
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      ₹{dashboardStats.totalCollectedPayment.toFixed(2)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            )}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  Total Budget
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  ₹{dashboardStats.totalBudget.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  Total Collected
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  ₹{dashboardStats.totalCollectedPayment.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500">
+                  Pending Payment
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">
+                  ₹{dashboardStats.totalPendingPayment.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </div>
+              </CardContent>
+            </Card>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <Card className="p-4">
               <CardHeader className="px-0 pt-0">
                 <CardTitle className="text-md font-medium flex items-center">
                   <PieChart className="mr-2 h-5 w-5" />
-                  Project Status Distribution
+                  Status Distribution
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-0 pb-0">
-                <div className="h-[300px]">
+                <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <RechartsPieChart>
                       <Pie
                         data={dashboardStats.statusData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
+                        innerRadius={40}
+                        outerRadius={60}
                         fill="#8884d8"
                         paddingAngle={5}
                         dataKey="value"
@@ -641,12 +729,12 @@ const Index = () => {
             <Card className="p-4">
               <CardHeader className="px-0 pt-0">
                 <CardTitle className="text-md font-medium flex items-center">
-                  <LineChart className="mr-2 h-5 w-5" />
-                  Project Priority Breakdown
+                  <BarChartIcon className="mr-2 h-5 w-5" />
+                  Priority Breakdown
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-0 pb-0">
-                <div className="h-[300px]">
+                <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={dashboardStats.priorityData}
@@ -656,13 +744,11 @@ const Index = () => {
                       <XAxis dataKey="name" />
                       <YAxis allowDecimals={false} />
                       <Tooltip formatter={(value: number) => [`${value} projects`, 'Count']} />
-                      <Legend />
                       <Bar dataKey="value" fill="#82ca9d">
                         {dashboardStats.priorityData.map((entry, index) => (
                           <Cell 
                             key={`cell-${index}`} 
                             fill={
-                              entry.name === "Urgent" ? "#ea384c" : 
                               entry.name === "High" ? "#FEC6A1" : 
                               entry.name === "Medium" ? "#FFBB28" : 
                               "#82ca9d"
@@ -676,77 +762,95 @@ const Index = () => {
               </CardContent>
             </Card>
             
-            {/* Financial charts only visible to admins */}
-            {isAdmin && (
-              <>
-                <Card className="p-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-md font-medium flex items-center">
-                      <BarChartIcon className="mr-2 h-5 w-5" />
-                      Payment Distribution
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="px-0 pb-0">
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={dashboardStats.paymentData}
-                          margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Amount']} />
-                          <Legend />
-                          <Bar dataKey="value" fill="#8884d8">
-                            {dashboardStats.paymentData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
+            <Card className="p-4">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle className="text-md font-medium flex items-center">
+                  <PieChart className="mr-2 h-5 w-5" />
+                  Payment Distribution
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                <div className="h-[250px]">
+                  {dashboardStats.paymentData.every(item => item.value === 0) ? (
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                      <div className="text-center">
+                        <PieChart className="mx-auto mb-2 h-8 w-8" />
+                        <p className="text-sm">No payment data available</p>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-                
-                <Card className="p-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-md font-medium flex items-center">
-                      <BarChartIcon className="mr-2 h-5 w-5" />
-                      Budget vs Payments
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="px-0 pb-0">
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={dashboardStats.budgetVsPaymentData}
-                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPieChart>
+                        <Pie
+                          data={dashboardStats.paymentData.filter(item => item.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={60}
+                          fill="#8884d8"
+                          paddingAngle={5}
+                          dataKey="value"
+                          label={({name, value, percent}) => value > 0 ? `${name}: ${(percent * 100).toFixed(0)}%` : ''}
                         >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Amount']} />
-                          <Legend />
-                          <Bar dataKey="value" fill="#8884d8">
-                            {dashboardStats.budgetVsPaymentData.map((entry, index) => (
-                              <Cell 
-                                key={`cell-${index}`} 
-                                fill={
-                                  entry.name === "Total Budget" ? "#8884d8" : 
-                                  entry.name === "Collected" ? "#82ca9d" : 
-                                  "#ea384c"
-                                } 
-                              />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
+                          {dashboardStats.paymentData.filter(item => item.value > 0).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => [`₹${value.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Amount']} />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="p-4">
+              <CardHeader className="px-0 pt-0">
+                <CardTitle className="text-md font-medium flex items-center">
+                  <BarChartIcon className="mr-2 h-5 w-5" />
+                  Budget vs Payments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                <div className="h-[250px]">
+                  {dashboardStats.budgetVsPaymentData.every(item => item.value === 0) ? (
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                      <div className="text-center">
+                        <BarChartIcon className="mx-auto mb-2 h-8 w-8" />
+                        <p className="text-sm">No budget data available</p>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </>
-            )}
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={dashboardStats.budgetVsPaymentData}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="name" 
+                          tick={{ fontSize: 12 }}
+                          interval={0}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
+                        />
+                        <Tooltip 
+                          formatter={(value: number) => [`₹${value.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, 'Amount']} 
+                          labelStyle={{ color: '#000' }}
+                        />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          {dashboardStats.budgetVsPaymentData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>
