@@ -5,8 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Eye, EyeOff, AlertCircle, Lock } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -22,114 +21,89 @@ export default function LoginForm() {
     setLoginError("");
 
     if (!email || !password) {
-      toast({
-        variant: "destructive",
-        title: "Validation Error",
-        description: "Please enter both email and password"
-      });
+      setLoginError("Please enter both email and password");
       return;
     }
 
     setIsLoading(true);
-
     try {
       await login(email, password);
-      toast({
-        title: "Login Successful",
-        description: "Welcome back!"
-      });
+      toast({ title: "Welcome back!", description: "Logged in successfully." });
     } catch (error) {
-      console.error("Login error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Invalid credentials";
-      setLoginError(errorMessage);
-      toast({
-        variant: "destructive",
-        title: "Login Failed",
-        description: errorMessage
-      });
+      const msg = error instanceof Error ? error.message : "Invalid credentials";
+      setLoginError(msg);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-md mx-auto shadow-lg border-0">
-      <CardHeader className="space-y-1 pb-4">
-        <div className="flex justify-center mb-2">
-          <div className="bg-black rounded-full p-3">
-            <Lock className="h-6 w-6 text-white" />
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+      <div className="mb-7">
+        <h2 className="text-2xl font-bold text-gray-900">Sign in</h2>
+        <p className="text-gray-500 text-sm mt-1">Enter your credentials to continue</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {loginError && (
+          <div className="bg-red-50 border border-red-200 p-3 rounded-xl flex items-start gap-2.5">
+            <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-600">{loginError}</p>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            disabled={isLoading}
+            autoComplete="email"
+            className="h-11 border-gray-200 focus:border-gray-400 bg-gray-50 rounded-xl"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              disabled={isLoading}
+              className="h-11 pr-11 border-gray-200 focus:border-gray-400 bg-gray-50 rounded-xl"
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              disabled={isLoading}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
         </div>
-        <CardTitle className="text-2xl text-center">Sign In</CardTitle>
-        <CardDescription className="text-center">
-          Enter your credentials to access your account
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {loginError && (
-            <div className="bg-destructive/10 p-3 rounded-md flex items-start gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-destructive">{loginError}</div>
-            </div>
-          )}
 
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              disabled={isLoading}
-              autoComplete="email"
-            />
-          </div>
+        <Button
+          type="submit"
+          className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white rounded-xl font-medium text-sm mt-2"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in…</>
+          ) : "Sign In"}
+        </Button>
 
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                disabled={isLoading}
-                className="pr-10"
-                autoComplete="current-password"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute top-1/2 right-1 -translate-y-1/2 h-8 w-8"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={isLoading}
-              >
-                {showPassword ? (
-                  <EyeOff className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-            </div>
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full bg-black hover:bg-gray-800 text-white"
-            disabled={isLoading}
-          >
-            {isLoading ? "Signing in..." : "Sign In"}
-          </Button>
-
-          <p className="text-center text-xs text-muted-foreground pt-2">
-            Contact your administrator if you don't have an account.
-          </p>
-        </form>
-      </CardContent>
-    </Card>
+        <p className="text-center text-xs text-gray-400 pt-1">
+          Contact your administrator to get an account
+        </p>
+      </form>
+    </div>
   );
 }

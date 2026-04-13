@@ -288,21 +288,23 @@ export default function AiChatbox() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-black text-white rounded-2xl shadow-2xl flex items-center justify-center hover:bg-gray-800 transition-all hover:scale-110 group"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-12 h-12 sm:w-14 sm:h-14 bg-gray-900 text-white rounded-2xl shadow-2xl flex items-center justify-center hover:bg-gray-800 transition-all hover:scale-110"
         title="AI Executive Advisor"
       >
-        <Bot className="h-7 w-7" />
-        <span className="absolute -top-2 -right-2 w-5 h-5 bg-violet-500 rounded-full text-[10px] flex items-center justify-center font-bold shadow">AI</span>
+        <Bot className="h-6 w-6 sm:h-7 sm:w-7" />
+        <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-violet-500 rounded-full text-[10px] flex items-center justify-center font-bold shadow">AI</span>
       </button>
     );
   }
 
   return (
-    <div className={`fixed bottom-6 right-6 z-50 flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 transition-all ${
-      minimized ? "w-72 h-14" : "w-96 h-[600px]"
+    <div className={`fixed z-50 flex flex-col bg-white shadow-2xl border border-gray-200 transition-all ${
+      minimized
+        ? "bottom-6 right-4 sm:right-6 w-72 h-14 rounded-2xl"
+        : "inset-0 sm:inset-auto sm:bottom-6 sm:right-4 sm:w-96 sm:h-[600px] sm:rounded-2xl"
     }`}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-black text-white rounded-t-2xl flex-shrink-0">
+      <div className="flex items-center gap-3 px-4 py-3 bg-gray-900 text-white flex-shrink-0 rounded-t-2xl sm:rounded-t-2xl">
         <div className="w-8 h-8 bg-violet-500 rounded-lg flex items-center justify-center">
           <Bot className="h-5 w-5" />
         </div>

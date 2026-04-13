@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from "react";
 import { useProjects } from "@/contexts/ProjectContext";
 import { Project, ProjectStatus, ProjectPriority } from "@/types/project";
@@ -6,668 +5,502 @@ import ProjectForm from "@/components/ProjectForm";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { 
-  Plus, 
-  Search, 
-  SortAsc, 
-  SortDesc, 
-  Edit, 
-  Trash2,
-  PieChart,
-  BarChart as BarChartIcon,
-  LineChart
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Plus, Search, SortAsc, SortDesc, Edit, Trash2,
+  PieChart, BarChart as BarChartIcon, TrendingUp,
+  Wallet, Clock, FolderOpen,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  PieChart as RechartsPieChart,
-  Pie,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Cell
+  PieChart as RechartsPieChart, Pie, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
 } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "react-router-dom";
+import { useCompany } from "@/contexts/CompanyContext";
 
+const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
+
+const statusStyle: Record<string, string> = {
+  "Not Started": "bg-gray-100 text-gray-700 border border-gray-300",
+  "In Progress": "bg-blue-100 text-blue-700 border border-blue-300",
+  "Completed":   "bg-green-100 text-green-700 border border-green-300",
+};
+
+const priorityStyle: Record<string, string> = {
+  Low:    "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  Medium: "bg-amber-100 text-amber-700 border border-amber-200",
+  High:   "bg-orange-100 text-orange-700 border border-orange-200",
+  Urgent: "bg-red-100 text-red-700 border border-red-200",
+};
+
+const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+const calcProgress = (start: string, end: string) => {
+  const s = new Date(start).getTime(), e = new Date(end).getTime(), n = Date.now();
+  if (n <= s) return { progress: 0, days: Math.ceil((e - n) / 86400000) };
+  if (n >= e) return { progress: 100, days: 0 };
+  return {
+    progress: Math.round(((n - s) / (e - s)) * 100),
+    days: Math.max(0, Math.ceil((e - n) / 86400000)),
+  };
+};
+
+const calcPending = (budget = 0, advance = 0, partial: number | any[] = 0) =>
+  Math.max(0, budget - (advance + (typeof partial === "number" ? partial : 0)));
+
+// ─── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({ label, value, Icon, color }: { label: string; value: string; Icon: any; color: string }) {
+  return (
+    <Card className="relative overflow-hidden">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+            <p className="text-2xl font-bold text-gray-900">{value}</p>
+          </div>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
+            <Icon className="h-5 w-5 text-white" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Project Card (mobile) ────────────────────────────────────────────────────
+function ProjectCard({
+  project, isAdmin, onEdit, onDelete,
+}: { project: Project; isAdmin: boolean; onEdit: () => void; onDelete: () => void }) {
+  const prog = calcProgress(project.startTime, project.deadline);
+  return (
+    <Card className="mb-3">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <h3 className="font-semibold text-gray-900 leading-tight">{project.name}</h3>
+          <div className="flex gap-1.5 flex-shrink-0">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
+              <Edit className="h-3.5 w-3.5" />
+            </Button>
+            {isAdmin && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-3">
+          <Badge className={statusStyle[project.status] || ""}>{project.status}</Badge>
+          <Badge className={priorityStyle[project.priority] || ""}>{project.priority}</Badge>
+        </div>
+
+        <div className="space-y-1.5 text-sm text-gray-600 mb-3">
+          <div className="flex justify-between">
+            <span className="text-gray-400">Due</span>
+            <span>{formatDate(project.deadline) || "—"}</span>
+          </div>
+          {isAdmin && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Budget</span>
+                <span className="font-medium">{fmt(project.budget || 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Pending</span>
+                <span className="font-medium text-red-600">{fmt(calcPending(project.budget, project.advancePayment, project.partialPayments))}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div>
+          <div className="flex justify-between text-xs text-gray-400 mb-1">
+            <span>Progress</span>
+            <span>{prog.progress}% · {prog.days}d left</span>
+          </div>
+          <Progress value={prog.progress} className="h-1.5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 const Index = () => {
   const { projects, deleteProject, updateProject } = useProjects();
   const { isAdmin, isEditor, currentUser } = useAuth();
+  const { activeCompany } = useCompany();
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState<"deadline" | "name">("deadline");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [editingCell, setEditingCell] = useState<{
-    id: string;
-    field: 'status' | 'priority' | 'advancePayment' | 'partialPayments' | null;
-  }>({ id: '', field: null });
+  const [editingCell, setEditingCell] = useState<{ id: string; field: string | null }>({ id: "", field: null });
 
   useEffect(() => {
     if (location.state?.openNewProjectForm) {
-      handleAddNew();
+      setEditingProject(null);
+      setOpen(true);
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
 
-  const handleEditProject = (project: Project) => {
-    setEditingProject(project);
-    setOpen(true);
-  };
+  const stats = useMemo(() => {
+    const ps = Array.isArray(projects) ? projects : [];
+    const totalBudget = ps.reduce((s, p) => s + (p.budget || 0), 0);
+    const collected = ps.reduce((s, p) => s + (p.advancePayment || 0) + (typeof p.partialPayments === "number" ? p.partialPayments : 0), 0);
+    const pending = ps.reduce((s, p) => s + calcPending(p.budget, p.advancePayment, p.partialPayments), 0);
 
-  const handleAddNew = () => {
-    setEditingProject(null);
-    setOpen(true);
-  };
+    const statusCounts = ps.reduce((a, p) => ({ ...a, [p.status]: (a[p.status] || 0) + 1 }), {} as Record<string, number>);
+    const priorityCounts = ps.reduce((a, p) => ({ ...a, [p.priority]: (a[p.priority] || 0) + 1 }), {} as Record<string, number>);
 
-  const toggleSort = () => {
-    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-  };
-
-  const getStatusStyle = (status: ProjectStatus) => {
-    switch (status) {
-      case ProjectStatus.NOT_STARTED:
-        return "bg-white text-black border border-black";
-      case ProjectStatus.IN_PROGRESS:
-        return "bg-black text-white";
-      case ProjectStatus.COMPLETED:
-        return "bg-white text-black border border-black line-through";
-      default:
-        return "bg-white text-black border border-black";
-    }
-  };
-
-  const getPriorityStyle = (priority: string) => {
-    switch (priority) {
-      case "Low":
-        return "bg-[#F2FCE2] text-black border border-green-300";
-      case "Medium":
-        return "bg-[#FEF7CD] text-black border border-yellow-300";
-      case "High":
-        return "bg-[#FEC6A1] text-black border border-orange-300";
-      case "Urgent":
-        return "bg-[#ea384c] text-white";
-      default:
-        return "bg-white text-black border border-black";
-    }
-  };
-
-  const calculateProgress = (startTime: string, deadline: string) => {
-    const start = new Date(startTime).getTime();
-    const end = new Date(deadline).getTime();
-    const now = new Date().getTime();
-    
-    if (now <= start) return { progress: 0, remainingDays: 0 };
-    if (now >= end) return { progress: 100, remainingDays: 0 };
-    
-    const total = end - start;
-    const current = now - start;
-    const progress = Math.round((current / total) * 100);
-    
-    const remainingDays = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
-    
-    return { progress, remainingDays };
-  };
-
-  const calculatePendingPayment = (budget: number = 0, advancePayment: number = 0, partialPayments: number | any[] = 0) => {
-    const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-    return Math.max(0, budget - (advancePayment + partialPaymentsValue));
-  };
-
-  const handleCellEdit = async (project: Project, field: string, value: any) => {
-    try {
-      const updates: Partial<Project> = { [field]: value };
-      
-      if (field === 'budget' || field === 'advancePayment' || field === 'partialPayments') {
-        const budget = field === 'budget' ? value : (project.budget || 0);
-        const advancePayment = field === 'advancePayment' ? value : (project.advancePayment || 0);
-        const partialPayments = field === 'partialPayments' ? value : (project.partialPayments || 0);
-        
-        await updateProject(project.id, updates);
-        setEditingCell({ id: '', field: null });
-      }
-    } catch (error) {
-      console.error('Error updating project:', error);
-    }
-  };
-
-  const dashboardStats = useMemo(() => {
-    const safeProjects = Array.isArray(projects) ? projects : [];
-    const totalProjects = safeProjects.length;
-    const totalBudget = safeProjects.reduce((sum, project) => sum + (project.budget || 0), 0);
-    const totalAdvancePayment = safeProjects.reduce((sum, project) => sum + (project.advancePayment || 0), 0);
-    
-    const totalPartialPaymentsValue = safeProjects.reduce((sum, project) => {
-      const partialPayments = project.partialPayments || 0;
-      const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-      return sum + partialPaymentsValue;
-    }, 0);
-    
-    const totalPendingPayment = safeProjects.reduce((sum, project) => {
-      const budget = project.budget || 0;
-      const advancePayment = project.advancePayment || 0;
-      const partialPayments = project.partialPayments || 0;
-      const partialPaymentsValue = typeof partialPayments === 'number' ? partialPayments : 0;
-      const pendingPayment = Math.max(0, budget - (advancePayment + partialPaymentsValue));
-      return sum + pendingPayment;
-    }, 0);
-    
-    const totalCollectedPayment = totalAdvancePayment + totalPartialPaymentsValue;
-    const totalProjectValue = totalCollectedPayment + totalPendingPayment;
-    
-    const statusCounts = safeProjects.reduce((acc, project) => {
-      acc[project.status] = (acc[project.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    const statusData = Object.entries(statusCounts).map(([name, value]) => ({
-      name, value
-    }));
-    
-    const priorityCounts = safeProjects.reduce((acc, project) => {
-      acc[project.priority] = (acc[project.priority] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    const priorityData = Object.entries(priorityCounts).map(([name, value]) => ({
-      name, value
-    }));
-    
-    const paymentData = [
-      { name: "Advance Payment", value: totalAdvancePayment },
-      { name: "Partial Payments", value: totalPartialPaymentsValue },
-      { name: "Pending Payment", value: totalPendingPayment }
-    ];
-    
-    const budgetVsPaymentData = [
-      { name: "Total Budget", value: totalBudget },
-      { name: "Collected", value: totalCollectedPayment },
-      { name: "Pending", value: totalPendingPayment }
-    ];
-    
     return {
-      totalProjects,
+      total: ps.length,
       totalBudget,
-      totalAdvancePayment,
-      totalPartialPayments: totalPartialPaymentsValue,
-      totalPendingPayment,
-      totalCollectedPayment,
-      totalProjectValue,
-      statusData,
-      priorityData,
-      paymentData,
-      budgetVsPaymentData
+      collected,
+      pending,
+      statusData: Object.entries(statusCounts).map(([name, value]) => ({ name, value })),
+      priorityData: Object.entries(priorityCounts).map(([name, value]) => ({ name, value })),
+      paymentData: [
+        { name: "Advance", value: ps.reduce((s, p) => s + (p.advancePayment || 0), 0) },
+        { name: "Partial", value: ps.reduce((s, p) => s + (typeof p.partialPayments === "number" ? p.partialPayments : 0), 0) },
+        { name: "Pending", value: pending },
+      ],
     };
   }, [projects]);
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
-
-  const filteredProjects = useMemo(() => {
-    if (!Array.isArray(projects)) {
-      return [];
-    }
+  const filtered = useMemo(() => {
+    if (!Array.isArray(projects)) return [];
     return projects
-      .filter((project) => {
-        const matchesSearch = project.name
-          .toLowerCase()
-          .includes(search.toLowerCase()) ||
-          project.assignedTo.some(assignee => 
-            assignee.toLowerCase().includes(search.toLowerCase())
-          );
-
-        const matchesStatus =
-          statusFilter === "all" || project.status === statusFilter;
-
-        return matchesSearch && matchesStatus;
+      .filter((p) => {
+        const q = search.toLowerCase();
+        return (
+          (p.name.toLowerCase().includes(q) || (p.assignedTo || []).some((a: string) => a.toLowerCase().includes(q))) &&
+          (statusFilter === "all" || p.status === statusFilter)
+        );
       })
       .sort((a, b) => {
-        if (sortBy === "deadline") {
-          return sortOrder === "asc"
-            ? new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
-            : new Date(b.deadline).getTime() - new Date(a.deadline).getTime();
-        } else {
-          return sortOrder === "asc"
-            ? a.name.localeCompare(b.name)
-            : b.name.localeCompare(a.name);
-        }
+        const asc = sortOrder === "asc" ? 1 : -1;
+        if (sortBy === "deadline") return asc * (new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+        return asc * a.name.localeCompare(b.name);
       });
   }, [projects, search, statusFilter, sortBy, sortOrder]);
 
-  // Added welcome message for editors who haven't seen any projects yet
-  const renderEmptyState = () => {
-    return (
-      <div className="text-center py-20">
-        <h2 className="text-2xl font-bold mb-2">Welcome, {currentUser?.name || 'Editor'}</h2>
-        <p className="text-gray-500 mb-6">No projects found</p>
-        {(isAdmin || isEditor) && (
-          <Button onClick={handleAddNew} variant="outline">
-            <Plus size={16} className="mr-1" /> Create your first project
-          </Button>
-        )}
-      </div>
-    );
+  const handleCellEdit = async (project: Project, field: string, value: any) => {
+    try {
+      await updateProject(project.id, { [field]: value });
+      setEditingCell({ id: "", field: null });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      <main className="container mx-auto p-4">
-        <div className="mb-6 space-y-4">
-          <div className="flex flex-col sm:flex-row gap-3 justify-between items-center">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
-              <Input
-                placeholder="Search projects..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8"
-              />
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6">
 
-            <div className="flex flex-wrap gap-2 items-center justify-end w-full sm:w-auto">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
-                  <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
-                  <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
-                </SelectContent>
-              </Select>
+        {/* Page header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">
+            {activeCompany?.name || "Dashboard"}
+          </h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {stats.total} project{stats.total !== 1 ? "s" : ""} · All financials in INR
+          </p>
+        </div>
 
-              <Select value={sortBy} onValueChange={(value) => setSortBy(value as "deadline" | "name")}>
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="deadline">Deadline</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                </SelectContent>
-              </Select>
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <StatCard label="Total Projects" value={String(stats.total)} Icon={FolderOpen} color="bg-indigo-500" />
+          {isAdmin && (
+            <>
+              <StatCard label="Total Budget" value={fmt(stats.totalBudget)} Icon={Wallet} color="bg-violet-500" />
+              <StatCard label="Collected" value={fmt(stats.collected)} Icon={TrendingUp} color="bg-emerald-500" />
+              <StatCard label="Pending" value={fmt(stats.pending)} Icon={Clock} color="bg-rose-500" />
+            </>
+          )}
+        </div>
 
-              <Button variant="outline" size="icon" onClick={toggleSort}>
-                {sortOrder === "asc" ? <SortAsc size={18} /> : <SortDesc size={18} />}
+        {/* Filter bar */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-5">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search projects…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 bg-white border-gray-200"
+            />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-36 bg-white border-gray-200">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
+                <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
+                <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as "deadline" | "name")}>
+              <SelectTrigger className="w-32 bg-white border-gray-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="deadline">Deadline</SelectItem>
+                <SelectItem value="name">Name</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              className="bg-white border-gray-200"
+            >
+              {sortOrder === "asc" ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
+            </Button>
+
+            {(isAdmin || isEditor) && (
+              <Button
+                onClick={() => { setEditingProject(null); setOpen(true); }}
+                className="bg-gray-900 text-white hover:bg-gray-800 sm:hidden"
+              >
+                <Plus className="h-4 w-4 mr-1" /> New
               </Button>
-              
-              {(isAdmin || isEditor) && (
-                <Button 
-                  onClick={handleAddNew} 
-                  className="bg-black text-white hover:bg-gray-800"
-                >
-                  <Plus size={16} className="mr-1" /> New Project
-                </Button>
-              )}
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Project list section */}
-        {filteredProjects.length === 0 ? (
-          renderEmptyState()
-        ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Assigned To</TableHead>
-                  <TableHead>Start Date</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Timeline</TableHead>
-                  {isAdmin && (
-                    <>
-                      <TableHead>Budget</TableHead>
-                      <TableHead>Advance Payment</TableHead>
-                      <TableHead>Partial Payments</TableHead>
-                      <TableHead>Pending Payment</TableHead>
-                    </>
-                  )}
-                  {(isAdmin || isEditor) && (
-                    <TableHead className="text-right">Actions</TableHead>
-                  )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProjects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.name}</TableCell>
-                    <TableCell>
-                      {editingCell.id === project.id && editingCell.field === 'status' ? (
-                        <Select
-                          defaultValue={project.status}
-                          onValueChange={(value) => handleCellEdit(project, 'status', value)}
-                        >
-                          <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.values(ProjectStatus).map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <div
-                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: 'status' })}
-                          className={`cursor-pointer ${getStatusStyle(project.status)}`}
-                        >
-                          <Badge className={getStatusStyle(project.status)}>
-                            {project.status}
-                          </Badge>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {editingCell.id === project.id && editingCell.field === 'priority' ? (
-                        <Select
-                          defaultValue={project.priority}
-                          onValueChange={(value) => handleCellEdit(project, 'priority', value)}
-                        >
-                          <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="Select priority" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.values(ProjectPriority).map((priority) => (
-                              <SelectItem key={priority} value={priority}>
-                                {priority}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <div
-                          onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: 'priority' })}
-                          className="cursor-pointer"
-                        >
-                          <Badge className={getPriorityStyle(project.priority)}>
-                            {project.priority}
-                          </Badge>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {Array.isArray(project.assignedTo) ? (
-                          project.assignedTo.map((person, index) => (
-                            <Badge key={index} variant="outline">
-                              {person}
-                            </Badge>
-                          ))
-                        ) : (
-                          <Badge variant="outline">{project.assignedTo}</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatDate(project.startTime)}</TableCell>
-                    <TableCell>{formatDate(project.deadline)}</TableCell>
-                    <TableCell className="w-[200px]">
-                      <div className="flex flex-col">
-                        <Progress 
-                          value={calculateProgress(project.startTime, project.deadline).progress}
-                          className="h-2 mb-1"
-                        />
-                        <span className="text-xs text-gray-500">
-                          {calculateProgress(project.startTime, project.deadline).remainingDays} days left
-                        </span>
-                      </div>
-                    </TableCell>
-                    {isAdmin && (
-                      <>
-                        <TableCell>₹{project.budget?.toFixed(2) || '0.00'}</TableCell>
-                        <TableCell>
-                          {editingCell.id === project.id && editingCell.field === 'advancePayment' ? (
-                            <Input
-                              type="number"
-                              defaultValue={project.advancePayment || 0}
-                              onBlur={(e) => handleCellEdit(project, 'advancePayment', parseFloat(e.target.value) || 0)}
-                              autoFocus
-                              className="w-24"
-                            />
-                          ) : (
-                            <div
-                              onClick={() => isAdmin && setEditingCell({ id: project.id, field: 'advancePayment' })}
-                              className="cursor-pointer"
-                            >
-                              ₹{project.advancePayment?.toFixed(2) || '0.00'}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {editingCell.id === project.id && editingCell.field === 'partialPayments' ? (
-                            <Input
-                              type="number"
-                              defaultValue={project.partialPayments || 0}
-                              onBlur={(e) => handleCellEdit(project, 'partialPayments', parseFloat(e.target.value) || 0)}
-                              autoFocus
-                              className="w-24"
-                            />
-                          ) : (
-                            <div
-                              onClick={() => isAdmin && setEditingCell({ id: project.id, field: 'partialPayments' })}
-                              className="cursor-pointer"
-                            >
-                              ₹{project.partialPayments?.toFixed(2) || '0.00'}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          ₹{calculatePendingPayment(
-                            project.budget, 
-                            project.advancePayment, 
-                            project.partialPayments
-                          ).toFixed(2)}
-                        </TableCell>
-                      </>
-                    )}
-                    {(isAdmin || isEditor) && (
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditProject(project)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Edit size={16} />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => deleteProject(project.id)}
-                            className="h-8 w-8 p-0"
-                            disabled={!isAdmin}
-                          >
-                            <Trash2 size={16} />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-                
-                {isAdmin && filteredProjects && Array.isArray(filteredProjects) && filteredProjects.length > 0 && (
-                  <TableRow className="bg-gray-100 font-bold">
-                    <TableCell colSpan={7}>Totals</TableCell>
-                    <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => acc + (project.budget || 0), 0)
-                        .toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => acc + (project.advancePayment || 0), 0)
-                        .toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => {
-                          const partialPayments = project.partialPayments || 0;
-                          return acc + (typeof partialPayments === 'number' ? partialPayments : 0);
-                        }, 0)
-                        .toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      ₹
-                      {filteredProjects
-                        .reduce((acc, project) => {
-                          return acc + calculatePendingPayment(
-                            project.budget, 
-                            project.advancePayment, 
-                            project.partialPayments
-                          );
-                        }, 0)
-                        .toFixed(2)}
-                    </TableCell>
-                    <TableCell></TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+        {/* Projects — Mobile Cards */}
+        {filtered.length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
+            <FolderOpen className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500 font-medium">No projects found</p>
+            {(isAdmin || isEditor) && (
+              <Button
+                onClick={() => { setEditingProject(null); setOpen(true); }}
+                className="mt-4 bg-gray-900 text-white"
+              >
+                <Plus className="h-4 w-4 mr-1" /> Create Project
+              </Button>
+            )}
           </div>
+        ) : (
+          <>
+            {/* Mobile: cards */}
+            <div className="md:hidden space-y-3">
+              {filtered.map((p) => (
+                <ProjectCard
+                  key={p.id}
+                  project={p}
+                  isAdmin={isAdmin}
+                  onEdit={() => { setEditingProject(p); setOpen(true); }}
+                  onDelete={() => deleteProject(p.id)}
+                />
+              ))}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden md:block bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Project</th>
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Status</th>
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Priority</th>
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Assigned</th>
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Start</th>
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Due</th>
+                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap min-w-[140px]">Timeline</th>
+                      {isAdmin && (
+                        <>
+                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Budget</th>
+                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Advance</th>
+                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Partial</th>
+                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Pending</th>
+                        </>
+                      )}
+                      {(isAdmin || isEditor) && (
+                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Actions</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filtered.map((project) => {
+                      const prog = calcProgress(project.startTime, project.deadline);
+                      return (
+                        <tr key={project.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px]">
+                            <span className="truncate block">{project.name}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {editingCell.id === project.id && editingCell.field === "status" ? (
+                              <Select defaultValue={project.status} onValueChange={(v) => handleCellEdit(project, "status", v)}>
+                                <SelectTrigger className="w-36 h-7 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {Object.values(ProjectStatus).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: "status" })}
+                                className={`cursor-pointer text-xs ${statusStyle[project.status] || ""}`}
+                              >
+                                {project.status}
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {editingCell.id === project.id && editingCell.field === "priority" ? (
+                              <Select defaultValue={project.priority} onValueChange={(v) => handleCellEdit(project, "priority", v)}>
+                                <SelectTrigger className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {Object.values(ProjectPriority).map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge
+                                onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: "priority" })}
+                                className={`cursor-pointer text-xs ${priorityStyle[project.priority] || ""}`}
+                              >
+                                {project.priority}
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {(Array.isArray(project.assignedTo) ? project.assignedTo : [project.assignedTo]).filter(Boolean).map((a, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">{a}</Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(project.startTime) || "—"}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(project.deadline) || "—"}</td>
+                          <td className="px-4 py-3 min-w-[140px]">
+                            <div className="flex items-center gap-2">
+                              <Progress value={prog.progress} className="h-1.5 flex-1" />
+                              <span className="text-xs text-gray-400 whitespace-nowrap">{prog.days}d</span>
+                            </div>
+                          </td>
+                          {isAdmin && (
+                            <>
+                              <td className="px-4 py-3 text-right font-medium text-gray-700 whitespace-nowrap">{fmt(project.budget || 0)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
+                                {editingCell.id === project.id && editingCell.field === "advancePayment" ? (
+                                  <Input type="number" defaultValue={project.advancePayment || 0} onBlur={(e) => handleCellEdit(project, "advancePayment", parseFloat(e.target.value) || 0)} autoFocus className="w-24 h-7 text-xs text-right" />
+                                ) : (
+                                  <span className="cursor-pointer hover:text-gray-900" onClick={() => isAdmin && setEditingCell({ id: project.id, field: "advancePayment" })}>
+                                    {fmt(project.advancePayment || 0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
+                                {editingCell.id === project.id && editingCell.field === "partialPayments" ? (
+                                  <Input type="number" defaultValue={typeof project.partialPayments === "number" ? project.partialPayments : 0} onBlur={(e) => handleCellEdit(project, "partialPayments", parseFloat(e.target.value) || 0)} autoFocus className="w-24 h-7 text-xs text-right" />
+                                ) : (
+                                  <span className="cursor-pointer hover:text-gray-900" onClick={() => isAdmin && setEditingCell({ id: project.id, field: "partialPayments" })}>
+                                    {fmt(typeof project.partialPayments === "number" ? project.partialPayments : 0)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right font-medium text-red-600 whitespace-nowrap">
+                                {fmt(calcPending(project.budget, project.advancePayment, project.partialPayments))}
+                              </td>
+                            </>
+                          )}
+                          {(isAdmin || isEditor) && (
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-gray-100"
+                                  onClick={() => { setEditingProject(project); setOpen(true); }}>
+                                  <Edit className="h-3.5 w-3.5" />
+                                </Button>
+                                {isAdmin && (
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50"
+                                    onClick={() => deleteProject(project.id)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+
+                    {/* Totals row */}
+                    {isAdmin && filtered.length > 0 && (
+                      <tr className="bg-gray-50 font-semibold text-gray-700 border-t-2 border-gray-200">
+                        <td colSpan={7} className="px-4 py-3 text-sm">Totals</td>
+                        <td className="px-4 py-3 text-right text-sm">{fmt(filtered.reduce((s, p) => s + (p.budget || 0), 0))}</td>
+                        <td className="px-4 py-3 text-right text-sm">{fmt(filtered.reduce((s, p) => s + (p.advancePayment || 0), 0))}</td>
+                        <td className="px-4 py-3 text-right text-sm">{fmt(filtered.reduce((s, p) => s + (typeof p.partialPayments === "number" ? p.partialPayments : 0), 0))}</td>
+                        <td className="px-4 py-3 text-right text-sm text-red-600">{fmt(filtered.reduce((s, p) => s + calcPending(p.budget, p.advancePayment, p.partialPayments), 0))}</td>
+                        <td className="px-4 py-3" />
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         )}
 
-        {/* Insights section - making it available for editors too but with project stats only */}
-        <div className="mt-12 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Project Insights</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Charts */}
+        <div className="mt-8 mb-4">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Project Insights</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500">
-                  Total Projects
+                <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <PieChart className="h-4 w-4" /> Status Distribution
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{dashboardStats.totalProjects}</div>
-              </CardContent>
-            </Card>
-            
-            {isAdmin && (
-              <>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">
-                      Total Budget
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      ₹{dashboardStats.totalBudget.toFixed(2)}
-                    </div>
-                  </CardContent>
-                </Card>
-                
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-500">
-                      Total Collected
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      ₹{dashboardStats.totalCollectedPayment.toFixed(2)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            )}
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="p-4">
-              <CardHeader className="px-0 pt-0">
-                <CardTitle className="text-md font-medium flex items-center">
-                  <PieChart className="mr-2 h-5 w-5" />
-                  Project Status Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-0 pb-0">
-                <div className="h-[300px]">
+                <div className="h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <RechartsPieChart>
-                      <Pie
-                        data={dashboardStats.statusData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        paddingAngle={5}
-                        dataKey="value"
-                        label={({name, percent}) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {dashboardStats.statusData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
+                      <Pie data={stats.statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value"
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                        {stats.statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>
-                      <Tooltip formatter={(value: number) => [`${value} projects`, 'Count']} />
+                      <Tooltip />
                     </RechartsPieChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
-            
-            <Card className="p-4">
-              <CardHeader className="px-0 pt-0">
-                <CardTitle className="text-md font-medium flex items-center">
-                  <LineChart className="mr-2 h-5 w-5" />
-                  Project Priority Breakdown
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <BarChartIcon className="h-4 w-4" /> Priority Breakdown
                 </CardTitle>
               </CardHeader>
-              <CardContent className="px-0 pb-0">
-                <div className="h-[300px]">
+              <CardContent>
+                <div className="h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={dashboardStats.priorityData}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis allowDecimals={false} />
-                      <Tooltip formatter={(value: number) => [`${value} projects`, 'Count']} />
-                      <Legend />
-                      <Bar dataKey="value" fill="#82ca9d">
-                        {dashboardStats.priorityData.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={
-                              entry.name === "Urgent" ? "#ea384c" : 
-                              entry.name === "High" ? "#FEC6A1" : 
-                              entry.name === "Medium" ? "#FFBB28" : 
-                              "#82ca9d"
-                            } 
-                          />
+                    <BarChart data={stats.priorityData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {stats.priorityData.map((e, i) => (
+                          <Cell key={i} fill={e.name === "Urgent" ? "#ef4444" : e.name === "High" ? "#f97316" : e.name === "Medium" ? "#f59e0b" : "#22c55e"} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -675,87 +508,38 @@ const Index = () => {
                 </div>
               </CardContent>
             </Card>
-            
-            {/* Financial charts only visible to admins */}
+
             {isAdmin && (
-              <>
-                <Card className="p-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-md font-medium flex items-center">
-                      <BarChartIcon className="mr-2 h-5 w-5" />
-                      Payment Distribution
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="px-0 pb-0">
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={dashboardStats.paymentData}
-                          margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Amount']} />
-                          <Legend />
-                          <Bar dataKey="value" fill="#8884d8">
-                            {dashboardStats.paymentData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-                
-                <Card className="p-4">
-                  <CardHeader className="px-0 pt-0">
-                    <CardTitle className="text-md font-medium flex items-center">
-                      <BarChartIcon className="mr-2 h-5 w-5" />
-                      Budget vs Payments
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="px-0 pb-0">
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={dashboardStats.budgetVsPaymentData}
-                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Amount']} />
-                          <Legend />
-                          <Bar dataKey="value" fill="#8884d8">
-                            {dashboardStats.budgetVsPaymentData.map((entry, index) => (
-                              <Cell 
-                                key={`cell-${index}`} 
-                                fill={
-                                  entry.name === "Total Budget" ? "#8884d8" : 
-                                  entry.name === "Collected" ? "#82ca9d" : 
-                                  "#ea384c"
-                                } 
-                              />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
+              <Card className="sm:col-span-2">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" /> Financial Overview
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[220px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={stats.paymentData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                        <YAxis tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+                        <Tooltip formatter={(v: number) => [`₹${v.toLocaleString("en-IN")}`, "Amount"]} />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          <Cell fill="#6366f1" />
+                          <Cell fill="#22c55e" />
+                          <Cell fill="#ef4444" />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>
       </main>
 
-      <ProjectForm
-        open={open}
-        onOpenChange={setOpen}
-        editingProject={editingProject}
-      />
+      <ProjectForm open={open} onOpenChange={setOpen} editingProject={editingProject} />
     </div>
   );
 };
