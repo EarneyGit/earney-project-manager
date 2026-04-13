@@ -25,14 +25,16 @@ interface ProjectFormProps {
   editingProject: Project | null;
 }
 
+const todayStr = () => new Date().toISOString().split("T")[0];
+
 const emptyForm = (): Omit<Project, "id"> => ({
   name: "",
   clientName: "",
-  startTime: new Date().toISOString(),
+  startTime: todayStr(),
   assignedTo: [],
   status: ProjectStatus.NOT_STARTED,
   priority: ProjectPriority.MEDIUM,
-  deadline: new Date().toISOString(),
+  deadline: todayStr(),
   budget: 0,
   advancePayment: 0,
   partialPayments: 0,
@@ -63,14 +65,20 @@ export default function ProjectForm({ open, onOpenChange, editingProject }: Proj
   // Reset/populate form
   useEffect(() => {
     if (editingProject) {
+      // Store dates as YYYY-MM-DD strings to avoid timezone/parsing issues
+      const toDateStr = (v: string | null | undefined) => {
+        if (!v) return todayStr();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v; // already YYYY-MM-DD
+        try { return new Date(v).toISOString().split("T")[0]; } catch { return todayStr(); }
+      };
       setFormData({
         name: editingProject.name,
         clientName: editingProject.clientName || "",
-        startTime: editingProject.startTime,
+        startTime: toDateStr(editingProject.startTime),
         assignedTo: Array.isArray(editingProject.assignedTo) ? editingProject.assignedTo : [],
         status: editingProject.status,
         priority: editingProject.priority,
-        deadline: editingProject.deadline,
+        deadline: toDateStr(editingProject.deadline),
         budget: editingProject.budget || 0,
         advancePayment: editingProject.advancePayment || 0,
         partialPayments: editingProject.partialPayments || 0,
@@ -105,7 +113,8 @@ export default function ProjectForm({ open, onOpenChange, editingProject }: Proj
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: new Date(value).toISOString() }));
+    // Store raw YYYY-MM-DD string — do NOT convert with new Date() to avoid timezone corruption
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleManagerChange = (managerId: string) => {
@@ -203,11 +212,15 @@ export default function ProjectForm({ open, onOpenChange, editingProject }: Proj
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="proj-start">Start Date</Label>
-              <Input id="proj-start" name="startTime" type="date" value={formatDateForInput(formData.startTime)} onChange={handleDateChange} required />
+              <Input id="proj-start" name="startTime" type="date"
+                value={formData.startTime?.split("T")[0] || todayStr()}
+                onChange={handleDateChange} required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="proj-deadline">Deadline</Label>
-              <Input id="proj-deadline" name="deadline" type="date" value={formatDateForInput(formData.deadline)} onChange={handleDateChange} required />
+              <Input id="proj-deadline" name="deadline" type="date"
+                value={formData.deadline?.split("T")[0] || todayStr()}
+                onChange={handleDateChange} required />
             </div>
           </div>
 
