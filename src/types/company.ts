@@ -37,8 +37,8 @@ export const LLM_PROVIDERS: LLMConfig[] = [
   },
   {
     provider: "gemini",
-    label: "Google Gemini 1.5 Pro",
-    model: "gemini-1.5-pro",
+    label: "Google Gemini 2.0 Flash",
+    model: "gemini-2.0-flash",
     placeholder: "AIza...",
     docsUrl: "https://aistudio.google.com/app/apikey",
   },
