@@ -1,23 +1,21 @@
-
 {
   "name": "Earney Projects",
-  "short_name": "Earney Projects",
-  "description": "Minimalist Project Management PWA",
+  "short_name": "Earney",
+  "description": "Project Management Dashboard for teams — manage projects, assign tasks, track progress.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
   "icons": [
     {
-      "src": "/placeholder.svg",
+      "src": "/favicon.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png"
     },
     {
-      "src": "/placeholder.svg",
+      "src": "/favicon.png",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/png"
     }
   ]
 }
-
