@@ -14,7 +14,7 @@ import { UserCircle, LogOut } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function UserProfile() {
-  const { currentUser, logout, isAdmin } = useAuth();
+  const { currentUser, logout, isAdmin, isManager, isEmployee } = useAuth();
   
   if (!currentUser) return null;
   
@@ -25,6 +25,8 @@ export default function UserProfile() {
       .join('')
       .toUpperCase();
   };
+
+  const roleLabel = isAdmin ? "Admin" : isManager ? "Manager" : isEmployee ? "Employee" : currentUser.role;
   
   return (
     <DropdownMenu>
@@ -42,8 +44,8 @@ export default function UserProfile() {
             <p className="text-xs leading-none text-muted-foreground">
               {currentUser.email}
             </p>
-            <Badge variant="outline" className="mt-2 w-fit">
-              {isAdmin ? "Admin" : "Editor"}
+            <Badge variant="outline" className="mt-2 w-fit capitalize">
+              {roleLabel}
             </Badge>
           </div>
         </DropdownMenuLabel>
