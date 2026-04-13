@@ -1,12 +1,12 @@
-
 import React, { useEffect, useState, lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ProjectProvider } from "./contexts/ProjectContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { CompanyProvider } from "./contexts/CompanyContext";
+import { ProjectProvider } from "./contexts/ProjectContext";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -17,6 +17,8 @@ import Index from "./pages/Index";
 const UserManagementPage = lazy(() => import("./pages/UserManagement"));
 const TaskManagementPage = lazy(() => import("./pages/TaskManagement"));
 const MyTasksPage         = lazy(() => import("./pages/MyTasks"));
+const CompaniesPage       = lazy(() => import("./pages/Companies"));
+const AiSettingsPage      = lazy(() => import("./pages/AiSettings"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,38 +61,41 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        {/* Auth must come before Company (Company needs auth for API calls) */}
         <AuthProvider>
-          <ProjectProvider>
-            <BrowserRouter>
-              <Toaster />
-              <Sonner />
-              <Routes>
-                {/* Public */}
-                <Route path="/auth" element={<Auth />} />
+          <CompanyProvider>
+            <ProjectProvider>
+              <BrowserRouter>
+                <Toaster />
+                <Sonner />
+                <Routes>
+                  {/* Public */}
+                  <Route path="/auth" element={<Auth />} />
 
-                {/* Protected — all authenticated users */}
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<AppLayout />}>
-                    {/* Admin + Manager */}
-                    <Route path="/dashboard" element={<Index />} />
+                  {/* Protected — all authenticated users */}
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<AppLayout />}>
+                      {/* Admin + Manager */}
+                      <Route path="/dashboard" element={<Index />} />
+                      <Route path="/tasks" element={<Lazy Page={TaskManagementPage} />} />
 
-                    {/* Admin only */}
-                    <Route path="/users" element={<Lazy Page={UserManagementPage} />} />
+                      {/* Admin only */}
+                      <Route path="/users" element={<Lazy Page={UserManagementPage} />} />
+                      <Route path="/companies" element={<Lazy Page={CompaniesPage} />} />
+                      <Route path="/ai-settings" element={<Lazy Page={AiSettingsPage} />} />
 
-                    {/* Manager (+ admin) task management */}
-                    <Route path="/tasks" element={<Lazy Page={TaskManagementPage} />} />
-
-                    {/* Employee task view */}
-                    <Route path="/my-tasks" element={<Lazy Page={MyTasksPage} />} />
+                      {/* Employee */}
+                      <Route path="/my-tasks" element={<Lazy Page={MyTasksPage} />} />
+                    </Route>
                   </Route>
-                </Route>
 
-                {/* Redirect root */}
-                <Route path="/" element={<Navigate to="/auth" replace />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </ProjectProvider>
+                  {/* Redirect root */}
+                  <Route path="/" element={<Navigate to="/auth" replace />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </BrowserRouter>
+            </ProjectProvider>
+          </CompanyProvider>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

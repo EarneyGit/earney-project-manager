@@ -1,8 +1,8 @@
-
 import React, { createContext, useState, useEffect, useCallback, useContext } from "react";
 import { v4 as uuidv4 } from "uuid";
 import * as api from "../services/api";
 import { useAuth } from "./AuthContext";
+import { useCompany } from "./CompanyContext";
 import { Project } from "@/types/project";
 
 export const ProjectContext = createContext(null);
@@ -15,11 +15,11 @@ export const useProjects = () => {
 
 export const ProjectProvider = ({ children }) => {
   const { currentUser, isAdmin, isManager } = useAuth();
+  const { activeCompany } = useCompany();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch projects filtered by role
   const fetchProjects = useCallback(async () => {
     if (!currentUser) {
       setProjects([]);
@@ -30,15 +30,13 @@ export const ProjectProvider = ({ children }) => {
     try {
       setLoading(true);
       let data = [];
+      const companyId = activeCompany?.id || null;
 
       if (isAdmin) {
-        // Admin sees ALL projects
-        data = await api.fetchProjects();
+        data = await api.fetchProjects(companyId);
       } else if (isManager) {
-        // Manager sees only their assigned projects
-        data = await api.fetchProjectsByManager(currentUser.id);
+        data = await api.fetchProjectsByManager(currentUser.id, companyId);
       }
-      // Employees see no projects (they have their own My Tasks page)
 
       setProjects(data);
       setError(null);
@@ -50,7 +48,7 @@ export const ProjectProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [currentUser, isAdmin, isManager]);
+  }, [currentUser, isAdmin, isManager, activeCompany?.id]);
 
   useEffect(() => {
     fetchProjects();
@@ -65,8 +63,9 @@ export const ProjectProvider = ({ children }) => {
 
   const addProject = async (project) => {
     try {
-      const newProject = { ...project, id: uuidv4(), pendingPayment: calcPending(project) };
-      const created = await api.createProject(newProject);
+      const companyId = activeCompany?.id || null;
+      const newProject = { ...project, id: uuidv4(), pendingPayment: calcPending(project), companyId };
+      const created = await api.createProject(newProject, companyId);
       setProjects((prev) => [...prev, created]);
       return created;
     } catch (err) {
@@ -88,9 +87,7 @@ export const ProjectProvider = ({ children }) => {
       const finalData = { ...updatedData, pendingPayment: calcPending(merged) };
 
       await api.updateProject(id, finalData);
-      setProjects((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, ...finalData } : p))
-      );
+      setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...finalData } : p)));
       return { ...finalData, id };
     } catch (err) {
       console.error("Error updating project:", err);
@@ -129,18 +126,16 @@ export const ProjectProvider = ({ children }) => {
   };
 
   return (
-    <ProjectContext.Provider
-      value={{
-        projects,
-        loading,
-        error,
-        addProject,
-        updateProject,
-        deleteProject,
-        getProjectById,
-        refreshProjects: fetchProjects,
-      }}
-    >
+    <ProjectContext.Provider value={{
+      projects,
+      loading,
+      error,
+      addProject,
+      updateProject,
+      deleteProject,
+      getProjectById,
+      refreshProjects: fetchProjects,
+    }}>
       {children}
     </ProjectContext.Provider>
   );
