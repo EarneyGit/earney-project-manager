@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -16,6 +15,9 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDateForInput } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { fetchUsersByRole } from "@/services/api";
+
+interface Manager { id: string; name: string; }
 
 interface ProjectFormProps {
   open: boolean;
@@ -23,310 +25,171 @@ interface ProjectFormProps {
   editingProject: Project | null;
 }
 
-export default function ProjectForm({
-  open,
-  onOpenChange,
-  editingProject,
-}: ProjectFormProps) {
+const emptyForm = (): Omit<Project, "id"> => ({
+  name: "",
+  clientName: "",
+  startTime: new Date().toISOString(),
+  assignedTo: [],
+  status: ProjectStatus.NOT_STARTED,
+  priority: ProjectPriority.MEDIUM,
+  deadline: new Date().toISOString(),
+  budget: 0,
+  advancePayment: 0,
+  partialPayments: 0,
+  pendingPayment: 0,
+  managerId: null,
+  managerName: null,
+});
+
+export default function ProjectForm({ open, onOpenChange, editingProject }: ProjectFormProps) {
   const { addProject, updateProject } = useProjects();
   const { isAdmin } = useAuth();
   const { toast } = useToast();
-  const [formData, setFormData] = useState<Omit<Project, "id">>({
-    name: "",
-    clientName: "",
-    startTime: new Date().toISOString(),
-    assignedTo: [],
-    status: ProjectStatus.NOT_STARTED,
-    priority: ProjectPriority.MEDIUM,
-    deadline: new Date().toISOString(),
-    budget: 0,
-    advancePayment: 0,
-    partialPayments: 0,
-  });
-  const [assigneeInput, setAssigneeInput] = useState("");
 
+  const [formData, setFormData] = useState<Omit<Project, "id">>(emptyForm());
+  const [managers, setManagers] = useState<Manager[]>([]);
+  const [loadingManagers, setLoadingManagers] = useState(false);
+
+  // Load managers list when dialog opens
+  useEffect(() => {
+    if (open && isAdmin) {
+      setLoadingManagers(true);
+      fetchUsersByRole("manager")
+        .then(setManagers)
+        .finally(() => setLoadingManagers(false));
+    }
+  }, [open, isAdmin]);
+
+  // Reset/populate form
   useEffect(() => {
     if (editingProject) {
       setFormData({
         name: editingProject.name,
         clientName: editingProject.clientName || "",
         startTime: editingProject.startTime,
-        assignedTo: Array.isArray(editingProject.assignedTo) 
-          ? editingProject.assignedTo 
-          : [editingProject.assignedTo].filter(Boolean),
+        assignedTo: Array.isArray(editingProject.assignedTo) ? editingProject.assignedTo : [],
         status: editingProject.status,
         priority: editingProject.priority,
         deadline: editingProject.deadline,
         budget: editingProject.budget || 0,
         advancePayment: editingProject.advancePayment || 0,
         partialPayments: editingProject.partialPayments || 0,
+        pendingPayment: editingProject.pendingPayment || 0,
+        managerId: editingProject.managerId || null,
+        managerName: editingProject.managerName || null,
       });
     } else {
-      setFormData({
-        name: "",
-        clientName: "",
-        startTime: new Date().toISOString(),
-        assignedTo: [],
-        status: ProjectStatus.NOT_STARTED,
-        priority: ProjectPriority.MEDIUM,
-        deadline: new Date().toISOString(),
-        budget: 0,
-        advancePayment: 0,
-        partialPayments: 0,
-      });
+      setFormData(emptyForm());
     }
-    setAssigneeInput("");
   }, [editingProject, open]);
 
-  const calculatePendingPayment = (budget: number, advancePayment: number, partialPayments: number) => {
-    return Math.max(0, budget - (advancePayment + partialPayments));
-  };
+  const calcPending = (budget: number, advance: number, partial: number) =>
+    Math.max(0, budget - (advance + partial));
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    const numValue = name === 'budget' || name === 'advancePayment' || name === 'partialPayments' 
-      ? parseFloat(value) || 0 
-      : value;
+    const isNumber = ["budget", "advancePayment", "partialPayments"].includes(name);
+    const numVal = isNumber ? parseFloat(value) || 0 : value;
 
-    setFormData(prev => {
-      const updates: any = { [name]: numValue };
-      
-      if (name === 'budget' || name === 'advancePayment' || name === 'partialPayments') {
-        const budgetValue = name === 'budget' ? parseFloat(value) || 0 : (prev.budget || 0);
-        const advanceValue = name === 'advancePayment' ? parseFloat(value) || 0 : (prev.advancePayment || 0);
-        const partialPaymentsValue = prev.partialPayments;
-        const partialValue = name === 'partialPayments' 
-          ? parseFloat(value) || 0 
-          : (typeof partialPaymentsValue === 'number' 
-              ? partialPaymentsValue 
-              : Array.isArray(partialPaymentsValue) 
-                ? 0 
-                : parseFloat(String(partialPaymentsValue)) || 0);
-        
-        const newPendingPayment = calculatePendingPayment(budgetValue, advanceValue, partialValue);
-        updates.pendingPayment = newPendingPayment;
+    setFormData((prev) => {
+      const next: any = { ...prev, [name]: numVal };
+      if (isNumber) {
+        const b = name === "budget" ? numVal as number : prev.budget || 0;
+        const a = name === "advancePayment" ? numVal as number : prev.advancePayment || 0;
+        const p = name === "partialPayments" ? numVal as number : (typeof prev.partialPayments === "number" ? prev.partialPayments : 0);
+        next.pendingPayment = calcPending(b, a, p);
       }
-
-      return { ...prev, ...updates };
+      return next;
     });
   };
 
-  const handleDateChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    const date = new Date(value);
-    setFormData((prev) => ({ ...prev, [name]: date.toISOString() }));
+    setFormData((prev) => ({ ...prev, [name]: new Date(value).toISOString() }));
   };
 
-  const handlePriorityChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, priority: value as ProjectPriority }));
-  };
-
-  const handleStatusChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, status: value as ProjectStatus }));
-  };
-
-  const addAssignee = () => {
-    if (assigneeInput.trim()) {
-      const currentAssignedTo = Array.isArray(formData.assignedTo) 
-        ? formData.assignedTo 
-        : [];
-        
-      if (currentAssignedTo.length < 10) {
-        setFormData((prev) => ({
-          ...prev,
-          assignedTo: [...currentAssignedTo, assigneeInput.trim()]
-        }));
-        setAssigneeInput("");
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Validation Error",
-          description: "Maximum 10 team members can be assigned"
-        });
-      }
-    }
-  };
-
-  const removeAssignee = (index: number) => {
-    const currentAssignedTo = Array.isArray(formData.assignedTo) 
-      ? formData.assignedTo 
-      : [];
-      
+  const handleManagerChange = (managerId: string) => {
+    const manager = managers.find((m) => m.id === managerId);
     setFormData((prev) => ({
       ...prev,
-      assignedTo: currentAssignedTo.filter((_, i) => i !== index)
+      managerId: managerId === "none" ? null : managerId,
+      managerName: manager?.name || null,
     }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const assignedToArray = Array.isArray(formData.assignedTo) 
-      ? formData.assignedTo 
-      : [];
-      
-    if (assignedToArray.length < 2) {
-      toast({
-        variant: "destructive",
-        title: "Validation Error",
-        description: "At least 2 people must be assigned to the project"
-      });
-      return;
-    }
-    
-    const budgetValue = typeof formData.budget === 'number' 
-      ? formData.budget 
-      : parseFloat(String(formData.budget)) || 0;
-    const advancePaymentValue = typeof formData.advancePayment === 'number'
-      ? formData.advancePayment
-      : parseFloat(String(formData.advancePayment)) || 0;
-    const partialPaymentsValue = typeof formData.partialPayments === 'number'
-      ? formData.partialPayments
-      : parseFloat(String(formData.partialPayments)) || 0;
 
-    const pendingPayment = Math.max(0, budgetValue - (advancePaymentValue + partialPaymentsValue));
-    
-    const submittingFormData = {
-      ...formData,
-      clientName: formData.clientName,
-      assignedTo: assignedToArray,
-      budget: budgetValue,
-      advancePayment: advancePaymentValue,
-      partialPayments: partialPaymentsValue,
-      pendingPayment: pendingPayment
-    };
-    
-    if (!submittingFormData.clientName) {
-      toast({
-        variant: "destructive",
-        title: "Validation Error",
-        description: "Client Name is required."
-      });
+    if (!formData.name.trim()) {
+      toast({ variant: "destructive", title: "Validation Error", description: "Project Name is required." });
       return;
     }
-    
+    if (!formData.clientName.trim()) {
+      toast({ variant: "destructive", title: "Validation Error", description: "Client Name is required." });
+      return;
+    }
+
+    const budget = typeof formData.budget === "number" ? formData.budget : parseFloat(String(formData.budget)) || 0;
+    const advance = typeof formData.advancePayment === "number" ? formData.advancePayment : parseFloat(String(formData.advancePayment)) || 0;
+    const partial = typeof formData.partialPayments === "number" ? formData.partialPayments : parseFloat(String(formData.partialPayments)) || 0;
+
+    const payload = {
+      ...formData,
+      assignedTo: Array.isArray(formData.assignedTo) ? formData.assignedTo : [],
+      budget,
+      advancePayment: advance,
+      partialPayments: partial,
+      pendingPayment: calcPending(budget, advance, partial),
+    };
+
     if (editingProject) {
-      updateProject(editingProject.id, submittingFormData);
+      updateProject(editingProject.id, payload);
+      toast({ title: "Project Updated", description: `"${payload.name}" has been updated.` });
     } else {
-      addProject(submittingFormData);
+      addProject(payload);
+      toast({ title: "Project Created", description: `"${payload.name}" has been created.` });
     }
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {editingProject ? "Edit Project" : "Add New Project"}
-          </DialogTitle>
+          <DialogTitle>{editingProject ? "Edit Project" : "New Project"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Project Name</Label>
-            <Input
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-              placeholder="Enter project name"
-            />
+
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          {/* Project Name */}
+          <div className="space-y-1.5">
+            <Label htmlFor="proj-name">Project Name *</Label>
+            <Input id="proj-name" name="name" value={formData.name} onChange={handleChange} placeholder="e.g. Website Redesign" required />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="clientName">Client Name</Label>
-            <Input
-              id="clientName"
-              name="clientName"
-              value={formData.clientName}
-              onChange={handleChange}
-              required
-              placeholder="Enter client name"
-            />
+          {/* Client Name */}
+          <div className="space-y-1.5">
+            <Label htmlFor="proj-client">Client Name *</Label>
+            <Input id="proj-client" name="clientName" value={formData.clientName} onChange={handleChange} placeholder="e.g. Acme Corp" required />
           </div>
 
-          <div className="space-y-2">
-            <Label>
-              Assigned To (
-              {Array.isArray(formData.assignedTo) ? formData.assignedTo.length : 0}
-              /10 maximum)
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                value={assigneeInput}
-                onChange={(e) => setAssigneeInput(e.target.value)}
-                placeholder="Enter team member name"
-                disabled={
-                  Array.isArray(formData.assignedTo) && 
-                  formData.assignedTo.length >= 10
-                }
-              />
-              <Button 
-                type="button" 
-                onClick={addAssignee}
-                disabled={
-                  Array.isArray(formData.assignedTo) && 
-                  formData.assignedTo.length >= 10
-                }
-              >
-                Add
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {Array.isArray(formData.assignedTo) && formData.assignedTo.map((person, index) => (
-                <Badge 
-                  key={index} 
-                  variant="secondary"
-                  className="flex items-center gap-1"
-                >
-                  {person}
-                  <button
-                    type="button"
-                    onClick={() => removeAssignee(index)}
-                    className="hover:text-destructive"
-                  >
-                    ×
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <Select
-              value={formData.status}
-              onValueChange={handleStatusChange}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
+          {/* Status */}
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select value={formData.status} onValueChange={(v) => setFormData((p) => ({ ...p, status: v as ProjectStatus }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value={ProjectStatus.NOT_STARTED}>
-                  Not Started
-                </SelectItem>
-                <SelectItem value={ProjectStatus.IN_PROGRESS}>
-                  In Progress
-                </SelectItem>
-                <SelectItem value={ProjectStatus.COMPLETED}>
-                  Completed
-                </SelectItem>
+                <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
+                <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
+                <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="priority">Priority</Label>
-            <Select
-              value={formData.priority}
-              onValueChange={handlePriorityChange}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
+          {/* Priority */}
+          <div className="space-y-1.5">
+            <Label>Priority</Label>
+            <Select value={formData.priority} onValueChange={(v) => setFormData((p) => ({ ...p, priority: v as ProjectPriority }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ProjectPriority.LOW}>Low</SelectItem>
                 <SelectItem value={ProjectPriority.MEDIUM}>Medium</SelectItem>
@@ -336,76 +199,77 @@ export default function ProjectForm({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="startTime">Start Date</Label>
-            <Input
-              id="startTime"
-              name="startTime"
-              type="date"
-              value={formatDateForInput(formData.startTime)}
-              onChange={handleDateChange}
-              required
-            />
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="proj-start">Start Date</Label>
+              <Input id="proj-start" name="startTime" type="date" value={formatDateForInput(formData.startTime)} onChange={handleDateChange} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="proj-deadline">Deadline</Label>
+              <Input id="proj-deadline" name="deadline" type="date" value={formatDateForInput(formData.deadline)} onChange={handleDateChange} required />
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="deadline">Deadline</Label>
-            <Input
-              id="deadline"
-              name="deadline"
-              type="date"
-              value={formatDateForInput(formData.deadline)}
-              onChange={handleDateChange}
-              required
-            />
-          </div>
-
+          {/* Assign Manager — Admin only */}
           {isAdmin && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="budget">Project Budget</Label>
-                <Input
-                  id="budget"
-                  name="budget"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.budget}
-                  onChange={(e) => setFormData(prev => ({ ...prev, budget: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="advancePayment">Advance Payment</Label>
-                <Input
-                  id="advancePayment"
-                  name="advancePayment"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.advancePayment}
-                  onChange={(e) => setFormData(prev => ({ ...prev, advancePayment: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="partialPayments">Partial Payments</Label>
-                <Input
-                  id="partialPayments"
-                  name="partialPayments"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.partialPayments}
-                  onChange={(e) => setFormData(prev => ({ ...prev, partialPayments: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-            </>
+            <div className="space-y-1.5">
+              <Label>Assign Manager</Label>
+              <Select
+                value={formData.managerId || "none"}
+                onValueChange={handleManagerChange}
+                disabled={loadingManagers}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingManagers ? "Loading managers…" : "Select a manager…"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— No Manager —</SelectItem>
+                  {managers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {managers.length === 0 && !loadingManagers && (
+                <p className="text-xs text-gray-400">
+                  No managers found. Create manager accounts in Manage Users first.
+                </p>
+              )}
+            </div>
           )}
 
-          <DialogFooter>
-            <Button type="submit" className="w-full">
-              {editingProject ? "Update Project" : "Add Project"}
+          {/* Financial Fields — Admin only */}
+          {isAdmin && (
+            <div className="space-y-3 pt-2 border-t">
+              <p className="text-sm font-medium text-gray-700">Financial Details</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="proj-budget">Budget (₹)</Label>
+                  <Input id="proj-budget" name="budget" type="number" min="0" step="0.01" value={formData.budget} onChange={handleChange} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="proj-advance">Advance (₹)</Label>
+                  <Input id="proj-advance" name="advancePayment" type="number" min="0" step="0.01" value={formData.advancePayment} onChange={handleChange} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="proj-partial">Partial (₹)</Label>
+                  <Input id="proj-partial" name="partialPayments" type="number" min="0" step="0.01" value={formData.partialPayments} onChange={handleChange} />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                Pending: ₹{calcPending(
+                  typeof formData.budget === "number" ? formData.budget : 0,
+                  typeof formData.advancePayment === "number" ? formData.advancePayment : 0,
+                  typeof formData.partialPayments === "number" ? formData.partialPayments : 0,
+                ).toLocaleString("en-IN")}
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" className="bg-black text-white hover:bg-gray-800">
+              {editingProject ? "Update Project" : "Create Project"}
             </Button>
           </DialogFooter>
         </form>
