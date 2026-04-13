@@ -272,7 +272,9 @@ export const fetchUsersByRole = async (role) => {
       .eq("role", role);
 
     if (error) throw error;
-    return data.map((u) => ({ id: u.id, name: u.full_name, role: u.role }));
+    return data
+      .filter((u) => u.id && u.full_name && u.full_name.trim() !== "")
+      .map((u) => ({ id: u.id, name: u.full_name, role: u.role }));
   } catch {
     return [];
   }

@@ -266,7 +266,9 @@ export default function TaskManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Unassigned</SelectItem>
-                  {employees.map((emp) => (
+                  {employees
+                    .filter((emp) => emp.id && emp.id.trim() !== "" && emp.name && emp.name.trim() !== "")
+                    .map((emp) => (
                     <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
                   ))}
                 </SelectContent>
