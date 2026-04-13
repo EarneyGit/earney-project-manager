@@ -41,7 +41,7 @@ export default function TaskManagement() {
   // Form state
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
-  const [formAssignee, setFormAssignee] = useState("");
+  const [formAssignee, setFormAssignee] = useState("unassigned");
   const [formDueDate, setFormDueDate] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
@@ -79,13 +79,13 @@ export default function TaskManagement() {
         title: formTitle.trim(),
         description: formDesc.trim() || undefined,
         status: "todo",
-        assignedTo: formAssignee || null,
+        assignedTo: formAssignee === "unassigned" ? null : (formAssignee || null),
         dueDate: formDueDate || null,
       });
       const assigneeName = employees.find((e) => e.id === formAssignee)?.name || null;
       setTasks((prev) => [{ ...newTask, assigneeName }, ...prev]);
       setShowForm(false);
-      setFormTitle(""); setFormDesc(""); setFormAssignee(""); setFormDueDate("");
+      setFormTitle(""); setFormDesc(""); setFormAssignee("unassigned"); setFormDueDate("");
       toast({ title: "Task created", description: "Task has been assigned successfully." });
     } catch {
       toast({ variant: "destructive", title: "Error", description: "Failed to create task." });
@@ -265,7 +265,7 @@ export default function TaskManagement() {
                   <SelectValue placeholder="Select an employee…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value="unassigned">— Unassigned —</SelectItem>
                   {employees
                     .filter((emp) => emp.id && emp.id.trim() !== "" && emp.name && emp.name.trim() !== "")
                     .map((emp) => (
