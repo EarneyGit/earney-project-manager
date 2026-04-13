@@ -117,8 +117,10 @@ export default function MyTasks() {
           {filtered.map((task) => {
             const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.todo;
             const StatusIcon = sc.icon;
-            const isOverdue =
-              task.dueDate && task.status !== "done" && new Date(task.dueDate) < new Date();
+            const safeDue = task.dueDate
+              ? (task.dueDate.length === 10 ? task.dueDate + 'T00:00:00' : task.dueDate)
+              : null;
+            const isOverdue = safeDue && task.status !== "done" && new Date(safeDue) < new Date();
 
             return (
               <Card
@@ -148,11 +150,11 @@ export default function MyTasks() {
                         >
                           <CalendarDays className="h-3 w-3" />
                           {isOverdue ? "Overdue — " : "Due "}
-                          {new Date(task.dueDate).toLocaleDateString("en-IN", {
+                          {safeDue ? new Date(safeDue).toLocaleDateString("en-IN", {
                             day: "numeric",
                             month: "short",
                             year: "numeric",
-                          })}
+                          }) : ""}
                         </div>
                       )}
                     </div>

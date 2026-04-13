@@ -199,7 +199,7 @@ export default function TaskManagement() {
                             {/* Due date */}
                             {task.dueDate && (
                               <span className="text-xs text-gray-500">
-                                Due: {new Date(task.dueDate).toLocaleDateString()}
+                                Due: {task.dueDate ? new Date(task.dueDate + (task.dueDate.length === 10 ? 'T00:00:00' : '')).toLocaleDateString("en-IN") : ""}
                               </span>
                             )}
                           </div>
