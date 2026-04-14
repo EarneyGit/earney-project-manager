@@ -58,14 +58,14 @@ const calcPending = (budget = 0, advance = 0, partial: number | any[] = 0) =>
 function StatCard({ label, value, Icon, color }: { label: string; value: string; Icon: any; color: string }) {
   return (
     <Card className="relative overflow-hidden">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <CardContent className="p-3 sm:p-5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5 truncate">{label}</p>
+            <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{value}</p>
           </div>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
-            <Icon className="h-5 w-5 text-white" />
+          <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex-shrink-0 flex items-center justify-center ${color}`}>
+            <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
           </div>
         </div>
       </CardContent>
