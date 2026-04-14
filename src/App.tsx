@@ -21,6 +21,7 @@ const CompaniesPage       = lazy(() => import("./pages/Companies"));
 const AiSettingsPage      = lazy(() => import("./pages/AiSettings"));
 const TeamPerformancePage = lazy(() => import("./pages/TeamPerformance"));
 const WorkStatusPage      = lazy(() => import("./pages/WorkStatus"));
+const AiAgentDashboardPage = lazy(() => import("./pages/AiAgentDashboard"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -85,6 +86,7 @@ function App() {
                       <Route path="/users" element={<Lazy Page={UserManagementPage} />} />
                       <Route path="/companies" element={<Lazy Page={CompaniesPage} />} />
                       <Route path="/ai-settings" element={<Lazy Page={AiSettingsPage} />} />
+                      <Route path="/ai-agent" element={<Lazy Page={AiAgentDashboardPage} />} />
                       <Route path="/team" element={<Lazy Page={TeamPerformancePage} />} />
 
                       {/* Employee */}

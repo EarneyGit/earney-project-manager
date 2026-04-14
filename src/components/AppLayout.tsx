@@ -5,6 +5,7 @@ import { useCompany } from "@/contexts/CompanyContext";
 import UserProfile from "@/components/UserProfile";
 import CompanySwitcher from "@/components/CompanySwitcher";
 import AiChatbox from "@/components/AiChatbox";
+import AriaChatPanel from "@/components/AriaChatPanel";
 import WorkStatusBanner from "@/components/WorkStatusBanner";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   Plus, Users, ClipboardList, ListTodo, LayoutDashboard,
-  Building2, Settings2, Menu, X, BarChart2, CalendarCheck,
+  Building2, Settings2, Menu, X, BarChart2, CalendarCheck, Bot,
 } from "lucide-react";
 
 interface NavItem {
@@ -36,6 +37,7 @@ export default function AppLayout() {
     { to: "/companies", label: "Companies", Icon: Building2, show: isAdmin },
     { to: "/users", label: "Users", Icon: Users, show: isAdmin },
     { to: "/team", label: "Team", Icon: BarChart2, show: isAdmin },
+    { to: "/ai-agent", label: "ARIA Agent", Icon: Bot, show: isAdmin },
     { to: "/ai-settings", label: "AI Settings", Icon: Settings2, show: isAdmin },
     { to: "/tasks", label: "Manage Tasks", Icon: ClipboardList, show: isManager || isAdmin },
     { to: "/my-tasks", label: "My Tasks", Icon: ListTodo, show: isEmployee },
@@ -199,8 +201,11 @@ export default function AppLayout() {
         Earney Projects Management &copy; {new Date().getFullYear()}
       </footer>
 
-      {/* AI Chatbox */}
+      {/* AI Chatbox (admin queries) */}
       <AiChatbox />
+
+      {/* ARIA — two-way team communication channel (all users) */}
+      <AriaChatPanel />
     </div>
   );
 }

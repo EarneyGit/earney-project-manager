@@ -638,3 +638,328 @@ export const fetchTeamPerformance = async (companyId) => {
     return [];
   }
 };
+
+// ═══════════════════════════════════════════════════════════════
+//  ARIA — AI Risk & Intelligence Agent  API
+// ═══════════════════════════════════════════════════════════════
+
+// Fetch conversation messages for one user
+export const fetchAriaMessages = async (userId, companyId, limit = 50) => {
+  try {
+    const { data, error } = await supabase
+      .from("aria_messages")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  } catch (e) { console.error("fetchAriaMessages:", e); return []; }
+};
+
+// Fetch unread count for notification bell
+export const fetchAriaUnreadCount = async (userId, companyId) => {
+  try {
+    const { count, error } = await supabase
+      .from("aria_messages")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("company_id", companyId)
+      .eq("sender_type", "aria")
+      .is("read_at", null);
+    if (error) throw error;
+    return count || 0;
+  } catch { return 0; }
+};
+
+// Mark all messages as read for a user
+export const markAriaMessagesRead = async (userId, companyId) => {
+  try {
+    await supabase
+      .from("aria_messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("company_id", companyId)
+      .eq("sender_type", "aria")
+      .is("read_at", null);
+  } catch (e) { console.error("markAriaMessagesRead:", e); }
+};
+
+// Send a user reply — saves message then immediately gets ARIA response via AI
+export const sendAriaUserReply = async ({
+  userId, companyId, message, relatedTaskId = null, relatedProjectId = null,
+  userName, userRole, aiKey, aiProvider, aiModel, customBaseUrl = "",
+}) => {
+  try {
+    // 1. Save user's message
+    await supabase.from("aria_messages").insert({
+      company_id: companyId, user_id: userId,
+      sender_type: "user", message,
+      message_type: "user_update",
+      priority: "medium",
+      related_task_id: relatedTaskId,
+      related_project_id: relatedProjectId,
+      read_at: new Date().toISOString(), // user's own message is instantly "read"
+    });
+
+    // 2. If no AI key, return without ARIA reply
+    if (!aiKey) return;
+
+    // 3. Fetch last 10 messages for context
+    const { data: history } = await supabase
+      .from("aria_messages")
+      .select("sender_type, message, created_at")
+      .eq("user_id", userId)
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    const historyText = (history || []).reverse().map(m =>
+      `${m.sender_type === "aria" ? "ARIA" : userName}: ${m.message}`
+    ).join("\n");
+
+    // 4. Generate ARIA reply
+    const prompt = `You are ARIA, a friendly AI work assistant at this company. You are having a conversation with ${userName} (${userRole}).
+Your job: monitor their work, keep them on track, and relay important updates to the admin.
+Be friendly, warm, and brief (max 50 words). Ask follow-up if needed.
+
+Recent conversation:
+${historyText}
+
+${userName} just said: "${message}"
+
+Respond naturally as ARIA. If they mention task delays or problems, acknowledge, offer help, and let them know you'll keep the admin informed.`;
+
+    const ariaReply = await callAIForAria(aiProvider, aiKey, aiModel, prompt, customBaseUrl);
+    if (!ariaReply) return;
+
+    // 5. Save ARIA's response
+    await supabase.from("aria_messages").insert({
+      company_id: companyId, user_id: userId,
+      sender_type: "aria", message: ariaReply,
+      message_type: "general",
+      priority: "low",
+      related_task_id: relatedTaskId,
+      related_project_id: relatedProjectId,
+    });
+  } catch (e) { console.error("sendAriaUserReply:", e); }
+};
+
+// Internal helper — call AI for ARIA responses
+const callAIForAria = async (provider, apiKey, model, prompt, customBaseUrl = "") => {
+  try {
+    if (provider === "gemini") {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
+      );
+      const d = await res.json();
+      return d.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+    if (provider === "claude") {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model, max_tokens: 200, messages: [{ role: "user", content: prompt }] }),
+      });
+      const d = await res.json();
+      return d.content?.[0]?.text || "";
+    }
+    // OpenAI-compatible
+    const baseMap = {
+      openai: "https://api.openai.com/v1", groq: "https://api.groq.com/openai/v1",
+      mistral: "https://api.mistral.ai/v1", deepseek: "https://api.deepseek.com/v1",
+      together: "https://api.together.xyz/v1", openrouter: "https://openrouter.ai/api/v1",
+      xai: "https://api.x.ai/v1",
+    };
+    const base = provider === "custom" ? customBaseUrl : (baseMap[provider] || "https://api.openai.com/v1");
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+    if (provider === "openrouter") { headers["HTTP-Referer"] = window.location.origin; headers["X-Title"] = "Earney Projects"; }
+    const res = await fetch(`${base}/chat/completions`, {
+      method: "POST", headers,
+      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], max_tokens: 200 }),
+    });
+    const d = await res.json();
+    return d.choices?.[0]?.message?.content || "";
+  } catch { return ""; }
+};
+
+// Admin: fetch all conversations grouped by user
+export const fetchAllAriaConversations = async (companyId) => {
+  try {
+    const { data, error } = await supabase
+      .from("aria_messages")
+      .select("*, profile:profiles!aria_messages_user_id_fkey(full_name, role)")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) throw error;
+    // Group by user
+    const byUser = {};
+    for (const msg of (data || [])) {
+      if (!byUser[msg.user_id]) {
+        byUser[msg.user_id] = {
+          userId: msg.user_id,
+          userName: msg.profile?.full_name || "Unknown",
+          userRole: msg.profile?.role || "employee",
+          messages: [],
+          unreadCount: 0,
+          lastMessage: null,
+          lastActivity: msg.created_at,
+        };
+      }
+      byUser[msg.user_id].messages.unshift(msg); // ascending order
+      if (!byUser[msg.user_id].lastMessage) byUser[msg.user_id].lastMessage = msg;
+      if (msg.sender_type === "user" && !msg.read_at) byUser[msg.user_id].unreadCount++;
+    }
+    return Object.values(byUser).sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+  } catch (e) { console.error("fetchAllAriaConversations:", e); return []; }
+};
+
+// Fetch agent run logs
+export const fetchAriaLogs = async (companyId, limit = 20) => {
+  try {
+    const { data, error } = await supabase
+      .from("aria_agent_logs")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  } catch { return []; }
+};
+
+// Get ARIA config for a company
+export const getAriaConfig = async (companyId) => {
+  try {
+    const { data } = await supabase
+      .from("aria_config")
+      .select("*")
+      .eq("company_id", companyId)
+      .maybeSingle();
+    return data || { enabled: true, start_hour: 10, end_hour: 19, interval_hours: 2, skip_sundays: true, overdue_days_threshold: 0, budget_risk_pct: 80 };
+  } catch { return null; }
+};
+
+// Save ARIA config
+export const saveAriaConfig = async (companyId, config) => {
+  try {
+    const { error } = await supabase
+      .from("aria_config")
+      .upsert({ company_id: companyId, ...config, updated_at: new Date().toISOString() }, { onConflict: "company_id" });
+    return !error;
+  } catch { return false; }
+};
+
+// Manual ARIA scan — runs the intelligence scan client-side
+// (used as fallback when no Edge Function cron is available)
+export const runAriaScan = async ({ companyId, triggeredBy, aiKey, aiProvider, aiModel, customBaseUrl = "" }) => {
+  const startTime = Date.now();
+  try {
+    // Load all active data
+    const [profiles, projects, tasks, workStatuses, leaves] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, role").eq("company_id", companyId).in("role", ["manager", "employee"]),
+      supabase.from("projects").select("id, name, status, budget, advance_payment, partial_payments, deadline, manager_id").eq("company_id", companyId).neq("status", "Completed"),
+      supabase.from("tasks").select("id, title, status, due_date, assigned_to, project_id").in("project_id",
+        (await supabase.from("projects").select("id").eq("company_id", companyId)).data?.map(p => p.id) || []
+      ),
+      supabase.from("work_status").select("user_id, is_working, date").eq("company_id", companyId).gte("date", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]),
+      supabase.from("leave_requests").select("user_id, leave_date, status").gte("leave_date", new Date().toISOString().split("T")[0]),
+    ]);
+
+    const today = new Date().toISOString().split("T")[0];
+    const team = profiles.data || [];
+    const allTasks = tasks.data || [];
+    const allProjects = projects.data || [];
+    const allStatuses = workStatuses.data || [];
+    const allLeaves = leaves.data || [];
+
+    let messagesSent = 0;
+    let risksFound = 0;
+    const riskBreakdown = { overdue_tasks: 0, no_checkin: 0, budget_risk: 0, none: 0 };
+    const summaryLines = [];
+
+    for (const person of team) {
+      const myTasks = allTasks.filter(t => t.assigned_to === person.id);
+      const overdueTasks = myTasks.filter(t => t.due_date && t.due_date < today && t.status !== "done");
+      const inProgressTasks = myTasks.filter(t => t.status === "in_progress");
+      const todayStatus = allStatuses.find(s => s.user_id === person.id && s.date === today);
+      const checkedInToday = todayStatus?.is_working;
+      const recentDays = allStatuses.filter(s => s.user_id === person.id && s.is_working).length;
+
+      const hasOverdue = overdueTasks.length > 0;
+      const noCheckin = !checkedInToday;
+
+      if (hasOverdue) { risksFound++; riskBreakdown.overdue_tasks++; }
+      if (noCheckin && recentDays === 0) { risksFound++; riskBreakdown.no_checkin++; }
+
+      // Generate AI message
+      const isOverdueAlert = hasOverdue;
+      const tone = isOverdueAlert ? "strict and urgent" : "friendly and supportive";
+      const currentWork = inProgressTasks.length > 0 ? inProgressTasks.map(t => t.title).join(", ") : "no active tasks";
+
+      const prompt = `You are ARIA, the AI work assistant at this company. Write a ${tone} check-in message to ${person.full_name} (${person.role}).
+${hasOverdue ? `IMPORTANT: They have ${overdueTasks.length} OVERDUE task(s): ${overdueTasks.map(t => `"${t.title}"`).join(", ")}. Be strict.` : ""}
+${noCheckin ? "They have not checked in today. Ask them to update their work status." : `They are working today. Current work: ${currentWork}.`}
+${inProgressTasks.length > 0 ? `Ask for a quick update on: ${currentWork}` : "Ask what they are working on today."}
+Keep it under 55 words. Be direct. Start with their first name.`;
+
+      const aiMsg = await callAIForAria(aiProvider, aiKey, aiModel, prompt, customBaseUrl);
+      if (!aiMsg) continue;
+
+      await supabase.from("aria_messages").insert({
+        company_id: companyId, user_id: person.id,
+        sender_type: "aria",
+        message: aiMsg,
+        message_type: hasOverdue ? "delay_alert" : "check_in",
+        priority: hasOverdue ? "high" : "medium",
+        requires_reply: true,
+      });
+      messagesSent++;
+      summaryLines.push(`${person.full_name}: ${hasOverdue ? overdueTasks.length + " overdue" : "checked in"}`);
+    }
+
+    // Budget risk check
+    for (const proj of allProjects) {
+      const spent = (proj.advance_payment || 0) + (proj.partial_payments || 0);
+      if (proj.budget > 0 && spent / proj.budget >= 0.8) {
+        risksFound++;
+        riskBreakdown.budget_risk = (riskBreakdown.budget_risk || 0) + 1;
+      }
+    }
+
+    // Generate admin summary
+    const adminSummaryPrompt = `ARIA completed a scan for the company. Summarize in 2 sentences for the admin:
+Team: ${team.length} people scanned. Messages sent: ${messagesSent}. Risks found: ${risksFound}.
+Details: ${summaryLines.join("; ") || "No major issues found."}
+Budget risks: ${riskBreakdown.budget_risk || 0} projects overspending.
+Be concise and executive-level.`;
+
+    const aiSummary = await callAIForAria(aiProvider, aiKey, aiModel, adminSummaryPrompt, customBaseUrl);
+
+    // Log the run
+    await supabase.from("aria_agent_logs").insert({
+      company_id: companyId, run_type: "manual", triggered_by: triggeredBy,
+      status: "completed", messages_sent: messagesSent, risks_found: risksFound,
+      ai_summary: aiSummary || `Scanned ${team.length} team members. Found ${risksFound} risks.`,
+      risk_breakdown: riskBreakdown,
+      duration_ms: Date.now() - startTime,
+    });
+
+    return { success: true, messagesSent, risksFound, aiSummary };
+  } catch (e) {
+    console.error("runAriaScan:", e);
+    await supabase.from("aria_agent_logs").insert({
+      company_id: companyId, run_type: "manual", triggered_by: triggeredBy,
+      status: "failed", messages_sent: 0, risks_found: 0,
+      ai_summary: `Scan failed: ${e.message}`,
+      duration_ms: Date.now() - startTime,
+    });
+    return { success: false, error: e.message };
+  }
+};
+
