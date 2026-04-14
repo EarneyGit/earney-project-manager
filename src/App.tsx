@@ -14,11 +14,13 @@ import AppLayout from "./components/AppLayout";
 import Index from "./pages/Index";
 
 // Lazy load heavier pages
-const UserManagementPage = lazy(() => import("./pages/UserManagement"));
-const TaskManagementPage = lazy(() => import("./pages/TaskManagement"));
+const UserManagementPage  = lazy(() => import("./pages/UserManagement"));
+const TaskManagementPage  = lazy(() => import("./pages/TaskManagement"));
 const MyTasksPage         = lazy(() => import("./pages/MyTasks"));
 const CompaniesPage       = lazy(() => import("./pages/Companies"));
 const AiSettingsPage      = lazy(() => import("./pages/AiSettings"));
+const TeamPerformancePage = lazy(() => import("./pages/TeamPerformance"));
+const WorkStatusPage      = lazy(() => import("./pages/WorkStatus"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,9 +85,13 @@ function App() {
                       <Route path="/users" element={<Lazy Page={UserManagementPage} />} />
                       <Route path="/companies" element={<Lazy Page={CompaniesPage} />} />
                       <Route path="/ai-settings" element={<Lazy Page={AiSettingsPage} />} />
+                      <Route path="/team" element={<Lazy Page={TeamPerformancePage} />} />
 
                       {/* Employee */}
                       <Route path="/my-tasks" element={<Lazy Page={MyTasksPage} />} />
+
+                      {/* Manager + Employee */}
+                      <Route path="/work-status" element={<Lazy Page={WorkStatusPage} />} />
                     </Route>
                   </Route>
 

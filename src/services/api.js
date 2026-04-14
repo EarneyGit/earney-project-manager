@@ -45,6 +45,7 @@ const mapDbToTask = (row) => ({
   status: row.status || "todo",
   assignedTo: row.assigned_to || null,
   dueDate: row.due_date || null,
+  serviceId: row.service_id || null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -57,6 +58,18 @@ const mapDbToCompany = (row) => ({
   createdBy: row.created_by || null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+});
+
+const mapDbToService = (row) => ({
+  id: row.id,
+  projectId: row.project_id,
+  name: row.name,
+  description: row.description || "",
+  clientType: row.client_type || "ongoing",
+  frequency: row.frequency || "monthly",
+  customDays: row.custom_days || null,
+  deliverableCount: row.deliverable_count || 1,
+  createdAt: row.created_at,
 });
 
 // Local storage helpers (fallback only)
@@ -210,14 +223,12 @@ export const getAllCompanySettings = async (companyId) => {
 
 export const fetchCompanySnapshot = async (companyId) => {
   try {
-    // Projects for this company
     const { data: projects, error: pe } = await supabase
       .from("projects")
       .select(`*, manager:profiles!projects_manager_id_fkey(full_name)`)
       .eq("company_id", companyId);
     if (pe) throw pe;
 
-    // Tasks for these projects
     const projectIds = projects.map((p) => p.id);
     let tasks = [];
     if (projectIds.length > 0) {
@@ -228,13 +239,11 @@ export const fetchCompanySnapshot = async (companyId) => {
       if (!te) tasks = taskData || [];
     }
 
-    // Managers (global)
     const { data: managers } = await supabase
       .from("profiles")
       .select("id, full_name")
       .eq("role", "manager");
 
-    // Employees (global)
     const { data: employees } = await supabase
       .from("profiles")
       .select("id, full_name")
@@ -244,6 +253,141 @@ export const fetchCompanySnapshot = async (companyId) => {
   } catch (e) {
     console.error("fetchCompanySnapshot error:", e);
     return { projects: [], tasks: [], managers: [], employees: [] };
+  }
+};
+
+// ─── Project Services ──────────────────────────────────────────
+
+export const fetchProjectServices = async (projectId) => {
+  try {
+    const { data, error } = await supabase
+      .from("project_services")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return data.map(mapDbToService);
+  } catch (e) {
+    console.error("fetchProjectServices error:", e);
+    return [];
+  }
+};
+
+export const createProjectService = async (service) => {
+  try {
+    const { data, error } = await supabase
+      .from("project_services")
+      .insert([{
+        id: uuidv4(),
+        project_id: service.projectId,
+        name: service.name,
+        description: service.description || null,
+        client_type: service.clientType || "ongoing",
+        frequency: service.frequency || "monthly",
+        custom_days: service.customDays || null,
+        deliverable_count: service.deliverableCount || 1,
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+    return mapDbToService(data);
+  } catch (e) {
+    console.error("createProjectService error:", e);
+    throw e;
+  }
+};
+
+export const updateProjectService = async (id, service) => {
+  try {
+    const { error } = await supabase
+      .from("project_services")
+      .update({
+        name: service.name,
+        description: service.description || null,
+        client_type: service.clientType || "ongoing",
+        frequency: service.frequency || "monthly",
+        custom_days: service.customDays || null,
+        deliverable_count: service.deliverableCount || 1,
+      })
+      .eq("id", id);
+    if (error) throw error;
+    return { ...service, id };
+  } catch (e) {
+    console.error("updateProjectService error:", e);
+    throw e;
+  }
+};
+
+export const deleteProjectService = async (id) => {
+  try {
+    const { error } = await supabase.from("project_services").delete().eq("id", id);
+    if (error) throw error;
+    return { id };
+  } catch (e) {
+    throw e;
+  }
+};
+
+// ─── Deliverable Status Calculation ───────────────────────────
+
+export const fetchServicesWithDeliveryStatus = async (projectId) => {
+  try {
+    const services = await fetchProjectServices(projectId);
+    const { data: tasks } = await supabase
+      .from("tasks")
+      .select("id, status, service_id, updated_at")
+      .eq("project_id", projectId);
+
+    const today = new Date();
+
+    const { data: projectRow } = await supabase
+      .from("projects")
+      .select("start_time, deadline")
+      .eq("id", projectId)
+      .single();
+
+    const startDate = projectRow?.start_time ? new Date(projectRow.start_time) : today;
+    const dayElapsed = Math.max(1, Math.floor((today - startDate) / 86400000));
+
+    return services.map((svc) => {
+      const svcTasks = (tasks || []).filter((t) => t.service_id === svc.id);
+      const doneTasks = svcTasks.filter((t) => t.status === "done");
+
+      let expectedByNow = 0;
+      switch (svc.frequency) {
+        case "daily":
+          expectedByNow = dayElapsed * svc.deliverableCount;
+          break;
+        case "weekly":
+          expectedByNow = Math.floor(dayElapsed / 7) * svc.deliverableCount;
+          break;
+        case "monthly":
+          expectedByNow = Math.floor(dayElapsed / 30) * svc.deliverableCount;
+          break;
+        case "custom":
+          expectedByNow = Math.floor(dayElapsed / Math.max(svc.customDays || 1, 1)) * svc.deliverableCount;
+          break;
+      }
+
+      const actual = doneTasks.length;
+      const gap = expectedByNow - actual;
+      let delayStatus = "on_track";
+      if (gap > 0) {
+        delayStatus = gap >= expectedByNow * 0.5 ? "critical" : "warning";
+      }
+
+      return {
+        ...svc,
+        expectedByNow,
+        actual,
+        gap: Math.max(0, gap),
+        delayStatus,
+        totalTasks: svcTasks.length,
+      };
+    });
+  } catch (e) {
+    console.error("fetchServicesWithDeliveryStatus error:", e);
+    return [];
   }
 };
 
@@ -397,6 +541,7 @@ export const createTask = async (task) => {
     status: task.status || "todo",
     assigned_to: task.assignedTo || null,
     due_date: task.dueDate || null,
+    service_id: task.serviceId || null,
   };
 
   try {
@@ -417,6 +562,7 @@ export const updateTask = async (id, task) => {
   if (task.status !== undefined) dbUpdate.status = task.status;
   if (task.assignedTo !== undefined) dbUpdate.assigned_to = task.assignedTo;
   if (task.dueDate !== undefined) dbUpdate.due_date = task.dueDate;
+  if (task.serviceId !== undefined) dbUpdate.service_id = task.serviceId;
 
   try {
     const { error } = await supabase.from("tasks").update(dbUpdate).eq("id", id);
@@ -453,6 +599,249 @@ export const fetchUsersByRole = async (role) => {
       .filter((u) => u.id && u.full_name && u.full_name.trim() !== "")
       .map((u) => ({ id: u.id, name: u.full_name, role: u.role }));
   } catch {
+    return [];
+  }
+};
+
+// ─── Work Status ──────────────────────────────────────────────
+
+export const setWorkStatus = async (isWorking) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+    const today = new Date().toISOString().split("T")[0];
+    const { error } = await supabase
+      .from("work_status")
+      .upsert({
+        user_id: user.id,
+        date: today,
+        is_working: isWorking,
+        checked_in_at: new Date().toISOString(),
+      }, { onConflict: "user_id,date" });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("setWorkStatus error:", e);
+    return false;
+  }
+};
+
+export const getMyWorkStatus = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const today = new Date().toISOString().split("T")[0];
+    const { data, error } = await supabase
+      .from("work_status")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("date", today)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.error("getMyWorkStatus error:", e);
+    return null;
+  }
+};
+
+export const fetchTodayTeamStatus = async () => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const { data, error } = await supabase
+      .from("work_status")
+      .select("*, profile:profiles!work_status_user_id_fkey(full_name, role)")
+      .eq("date", today);
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error("fetchTodayTeamStatus error:", e);
+    return [];
+  }
+};
+
+// ─── Leave Requests ───────────────────────────────────────────
+
+export const submitLeaveRequest = async (leaveDate, reason) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+    const { data, error } = await supabase
+      .from("leave_requests")
+      .insert([{
+        id: uuidv4(),
+        user_id: user.id,
+        leave_date: leaveDate,
+        reason: reason || null,
+        status: "pending",
+      }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.error("submitLeaveRequest error:", e);
+    throw e;
+  }
+};
+
+export const fetchMyLeaveRequests = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    const { data, error } = await supabase
+      .from("leave_requests")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("leave_date", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error("fetchMyLeaveRequests error:", e);
+    return [];
+  }
+};
+
+export const fetchAllLeaveRequests = async (status = null) => {
+  try {
+    let query = supabase
+      .from("leave_requests")
+      .select("*, profile:profiles!leave_requests_user_id_fkey(full_name, role)")
+      .order("leave_date", { ascending: true });
+    if (status) query = query.eq("status", status);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error("fetchAllLeaveRequests error:", e);
+    return [];
+  }
+};
+
+export const updateLeaveRequest = async (id, status, adminNote = "") => {
+  try {
+    const { error } = await supabase
+      .from("leave_requests")
+      .update({ status, admin_note: adminNote || null, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("updateLeaveRequest error:", e);
+    return false;
+  }
+};
+
+// ─── Team Performance ─────────────────────────────────────────
+
+export const fetchTeamPerformance = async (companyId) => {
+  try {
+    // All team members (managers + employees)
+    const { data: profiles, error: pe } = await supabase
+      .from("profiles")
+      .select("id, full_name, role")
+      .in("role", ["manager", "employee"]);
+    if (pe) throw pe;
+
+    // All projects for this company
+    const { data: projects } = await supabase
+      .from("projects")
+      .select("id, name, budget, start_time, deadline, manager_id")
+      .eq("company_id", companyId);
+
+    const projectIds = (projects || []).map((p) => p.id);
+
+    // All project_members
+    const { data: members } = projectIds.length > 0
+      ? await supabase.from("project_members").select("project_id, user_id").in("project_id", projectIds)
+      : { data: [] };
+
+    // All tasks
+    const { data: tasks } = projectIds.length > 0
+      ? await supabase
+          .from("tasks")
+          .select("id, project_id, assigned_to, status, updated_at, due_date")
+          .in("project_id", projectIds)
+      : { data: [] };
+
+    // Today's work statuses
+    const today = new Date().toISOString().split("T")[0];
+    const { data: workStatuses } = await supabase
+      .from("work_status")
+      .select("user_id, is_working")
+      .eq("date", today);
+
+    // Leave requests approved for today
+    const { data: leaveToday } = await supabase
+      .from("leave_requests")
+      .select("user_id")
+      .eq("leave_date", today)
+      .eq("status", "approved");
+
+    const workStatusMap = {};
+    (workStatuses || []).forEach((w) => { workStatusMap[w.user_id] = w.is_working; });
+    const onLeaveSet = new Set((leaveToday || []).map((l) => l.user_id));
+
+    // Build per-user performance
+    return (profiles || []).map((user) => {
+      const userProjects = (projects || []).filter((p) =>
+        p.manager_id === user.id ||
+        (members || []).some((m) => m.user_id === user.id && m.project_id === p.id)
+      );
+
+      const userTasks = (tasks || []).filter((t) => t.assigned_to === user.id);
+      const doneTasks = userTasks.filter((t) => t.status === "done");
+
+      // Weekly deliverables: group done tasks by day (last 7 days)
+      const weeklyData = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        const dateStr = d.toISOString().split("T")[0];
+        const label = d.toLocaleDateString("en-IN", { weekday: "short" });
+        const count = doneTasks.filter((t) => t.updated_at?.startsWith(dateStr)).length;
+        return { date: dateStr, label, count };
+      });
+
+      // Daily value estimate
+      let dailyValue = 0;
+      userProjects.forEach((proj) => {
+        const start = new Date(proj.start_time || proj.created_at || Date.now());
+        const end = new Date(proj.deadline || Date.now());
+        const projDays = Math.max(1, Math.ceil((end - start) / 86400000));
+        const teamSize = Math.max(1, (members || []).filter((m) => m.project_id === proj.id).length);
+        dailyValue += (proj.budget || 0) / projDays / teamSize;
+      });
+
+      // Delay check: tasks past due_date and not done
+      const overdueCount = userTasks.filter((t) => {
+        if (t.status === "done") return false;
+        if (!t.due_date) return false;
+        return new Date(t.due_date) < new Date();
+      }).length;
+
+      // Work status for today
+      let todayStatus = "not_checked_in";
+      if (onLeaveSet.has(user.id)) todayStatus = "on_leave";
+      else if (workStatusMap[user.id] === true) todayStatus = "working";
+      else if (workStatusMap[user.id] === false) todayStatus = "not_working";
+
+      return {
+        id: user.id,
+        name: user.full_name,
+        role: user.role,
+        projectCount: userProjects.length,
+        taskCount: userTasks.length,
+        doneCount: doneTasks.length,
+        pendingCount: userTasks.length - doneTasks.length,
+        overdueCount,
+        dailyValue: Math.round(dailyValue),
+        weeklyData,
+        todayStatus,
+        completionRate: userTasks.length > 0 ? Math.round((doneTasks.length / userTasks.length) * 100) : 0,
+      };
+    });
+  } catch (e) {
+    console.error("fetchTeamPerformance error:", e);
     return [];
   }
 };

@@ -5,13 +5,14 @@ import { useCompany } from "@/contexts/CompanyContext";
 import UserProfile from "@/components/UserProfile";
 import CompanySwitcher from "@/components/CompanySwitcher";
 import AiChatbox from "@/components/AiChatbox";
+import WorkStatusBanner from "@/components/WorkStatusBanner";
 import { Button } from "@/components/ui/button";
 import {
   Sheet, SheetContent, SheetTrigger,
 } from "@/components/ui/sheet";
 import {
   Plus, Users, ClipboardList, ListTodo, LayoutDashboard,
-  Building2, Settings2, Menu, X,
+  Building2, Settings2, Menu, X, BarChart2, CalendarCheck,
 } from "lucide-react";
 
 interface NavItem {
@@ -34,9 +35,11 @@ export default function AppLayout() {
     { to: "/dashboard", label: "Dashboard", Icon: LayoutDashboard, show: isAdmin || isManager },
     { to: "/companies", label: "Companies", Icon: Building2, show: isAdmin },
     { to: "/users", label: "Users", Icon: Users, show: isAdmin },
+    { to: "/team", label: "Team", Icon: BarChart2, show: isAdmin },
     { to: "/ai-settings", label: "AI Settings", Icon: Settings2, show: isAdmin },
     { to: "/tasks", label: "Manage Tasks", Icon: ClipboardList, show: isManager || isAdmin },
     { to: "/my-tasks", label: "My Tasks", Icon: ListTodo, show: isEmployee },
+    { to: "/work-status", label: "Work Status", Icon: CalendarCheck, show: isManager || isEmployee },
   ].filter((item) => item.show);
 
   const DesktopNavLink = ({ to, label, Icon }: NavItem) => (
@@ -182,6 +185,9 @@ export default function AppLayout() {
           </div>
         </div>
       </header>
+
+      {/* Work Status Banner — managers and employees only */}
+      {(isManager || isEmployee) && <WorkStatusBanner />}
 
       {/* Main content */}
       <main className="flex-1 min-h-0">
