@@ -448,8 +448,10 @@ export const getMyWorkStatus = async () => {
 export const fetchTodayTeamStatus = async () => {
   try {
     const today = new Date().toISOString().split("T")[0];
-    const { data, error } = await supabase.from("work_status")
-      .select("*, profile:profiles!work_status_user_id_fkey(full_name, role)").eq("date", today);
+    const { data, error } = await supabase
+      .from("work_status")
+      .select("*, profile:profiles!work_status_user_id_fkey(full_name, role)")
+      .eq("date", today);
     if (error) throw error;
     return data || [];
   } catch (e) { console.error("fetchTodayTeamStatus error:", e); return []; }
@@ -480,8 +482,10 @@ export const fetchMyLeaveRequests = async () => {
 
 export const fetchAllLeaveRequests = async (status = null) => {
   try {
-    let query = supabase.from("leave_requests")
-      .select("*, profile:profiles!leave_requests_user_id_fkey(full_name, role)").order("leave_date", { ascending: true });
+    let query = supabase
+      .from("leave_requests")
+      .select("*, profile:profiles!leave_requests_user_id_fkey(full_name, role)")
+      .order("leave_date", { ascending: true });
     if (status) query = query.eq("status", status);
     const { data, error } = await query;
     if (error) throw error;
@@ -537,16 +541,33 @@ export const fetchTeamPerformance = async (companyId) => {
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
     const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().split("T")[0];
 
-    // Fetch all work_status for this month and year
-    const { data: workThisMonth } = await supabase.from("work_status")
-      .select("user_id, date").eq("is_working", true).gte("date", monthStart).lte("date", today);
+    // Fetch all work_status for this month and year in one query
+    const { data: workThisMonth } = await supabase
+      .from("work_status")
+      .select("user_id, date")
+      .eq("is_working", true)
+      .gte("date", monthStart)
+      .lte("date", today);
 
-    const { data: workThisYear } = await supabase.from("work_status")
-      .select("user_id, date").eq("is_working", true).gte("date", yearStart).lte("date", today);
+    const { data: workThisYear } = await supabase
+      .from("work_status")
+      .select("user_id, date")
+      .eq("is_working", true)
+      .gte("date", yearStart)
+      .lte("date", today);
 
-    // Today's statuses
-    const { data: workStatuses } = await supabase.from("work_status").select("user_id, is_working").eq("date", today);
-    const { data: leaveToday } = await supabase.from("leave_requests").select("user_id").eq("leave_date", today).eq("status", "approved");
+    // Today's statuses — simple select without join
+    const { data: workStatuses } = await supabase
+      .from("work_status")
+      .select("user_id, is_working")
+      .eq("date", today);
+
+    // Approved leaves today
+    const { data: leaveToday } = await supabase
+      .from("leave_requests")
+      .select("user_id")
+      .eq("leave_date", today)
+      .eq("status", "approved");
 
     // All salaries
     const salaries = await fetchAllSalaries();
