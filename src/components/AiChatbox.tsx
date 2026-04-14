@@ -98,16 +98,38 @@ ${performanceAlerts.length > 0 ? performanceAlerts.map((a) => `  ${a}`).join("\n
 Now answer the user's question as a strategic executive advisor. Format your response with clear sections using markdown. Keep it actionable and data-driven.`;
 };
 
-// ─── LLM API calls ──────────────────────────────────────────────
-const callLLM = async (provider: LLMProvider, apiKey: string, model: string, messages: any[]): Promise<string> => {
-  if (provider === "openai" || provider === "mistral") {
-    const baseUrl = provider === "openai"
-      ? "https://api.openai.com/v1/chat/completions"
-      : "https://api.mistral.ai/v1/chat/completions";
+// ─── LLM API calls — all 11 providers ─────────────────────────
+const OPENAI_COMPAT_BASES: Partial<Record<LLMProvider, string>> = {
+  openai:     "https://api.openai.com/v1",
+  groq:       "https://api.groq.com/openai/v1",
+  mistral:    "https://api.mistral.ai/v1",
+  deepseek:   "https://api.deepseek.com/v1",
+  together:   "https://api.together.xyz/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  xai:        "https://api.x.ai/v1",
+};
 
-    const res = await fetch(baseUrl, {
+const callLLM = async (
+  provider: LLMProvider, apiKey: string, model: string,
+  messages: any[], customBaseUrl = ""
+): Promise<string> => {
+  // OpenAI-compatible providers
+  if (provider in OPENAI_COMPAT_BASES || provider === "custom") {
+    const base = provider === "custom"
+      ? customBaseUrl.trim() || ""
+      : OPENAI_COMPAT_BASES[provider as keyof typeof OPENAI_COMPAT_BASES]!;
+    if (!base) throw new Error("Custom Base URL not configured. Set it in AI Settings.");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    };
+    if (provider === "openrouter") {
+      headers["HTTP-Referer"] = window.location.origin;
+      headers["X-Title"] = "Earney Projects";
+    }
+    const res = await fetch(`${base}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      headers,
       body: JSON.stringify({ model, messages, max_tokens: 1500, temperature: 0.7 }),
     });
     if (!res.ok) {
@@ -126,7 +148,6 @@ const callLLM = async (provider: LLMProvider, apiKey: string, model: string, mes
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     }));
-
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -147,7 +168,6 @@ const callLLM = async (provider: LLMProvider, apiKey: string, model: string, mes
   if (provider === "claude") {
     const systemMsg = messages.find((m) => m.role === "system")?.content || "";
     const userMsgs = messages.filter((m) => m.role !== "system");
-
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -156,12 +176,7 @@ const callLLM = async (provider: LLMProvider, apiKey: string, model: string, mes
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true",
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: 1500,
-        system: systemMsg,
-        messages: userMsgs,
-      }),
+      body: JSON.stringify({ model, max_tokens: 1500, system: systemMsg, messages: userMsgs }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -171,7 +186,27 @@ const callLLM = async (provider: LLMProvider, apiKey: string, model: string, mes
     return data.content?.[0]?.text || "No response";
   }
 
-  throw new Error("Unknown provider");
+  if (provider === "cohere") {
+    const systemMsg = messages.find((m) => m.role === "system")?.content || "";
+    const chatHistory = messages.filter((m) => m.role !== "system").slice(0, -1).map((m) => ({
+      role: m.role === "assistant" ? "CHATBOT" : "USER",
+      message: m.content,
+    }));
+    const lastUser = messages.filter((m) => m.role === "user").slice(-1)[0]?.content || "";
+    const res = await fetch("https://api.cohere.ai/v1/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, message: lastUser, preamble: systemMsg, chat_history: chatHistory, max_tokens: 1500 }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `Cohere API error ${res.status}`);
+    }
+    const data = await res.json();
+    return data.text || "No response";
+  }
+
+  throw new Error(`Provider "${provider}" not supported.`);
 };
 
 // ─── Message type ────────────────────────────────────────────────
@@ -187,7 +222,9 @@ export default function AiChatbox() {
 
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [provider, setProvider] = useState<LLMProvider>("openai");
+  const [provider, setProvider] = useState<LLMProvider>("gemini");
+  const [activeModel, setActiveModel] = useState("");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -202,16 +239,29 @@ export default function AiChatbox() {
 
   const providerConfig = LLM_PROVIDERS.find((p) => p.provider === provider)!;
 
-  // Load API key from Supabase when company or provider changes
+  // Load primary provider + API key + saved model on company change
   useEffect(() => {
     if (!activeCompany) return;
     const loadKey = async () => {
-      const key = await api.getCompanySetting(activeCompany.id, `ai_key_${provider}`);
+      // Load primary provider preference
+      const prim = await api.getCompanySetting(activeCompany.id, "ai_primary_provider");
+      const activeProv = (prim as LLMProvider) || provider;
+      if (prim && prim !== provider) setProvider(activeProv as LLMProvider);
+      // Load key and model for the active provider
+      const [key, model] = await Promise.all([
+        api.getCompanySetting(activeCompany.id, `ai_key_${activeProv}`),
+        api.getCompanySetting(activeCompany.id, `ai_model_${activeProv}`),
+      ]);
       setApiKey(key || "");
       setApiKeySaved(!!key);
+      if (model) setActiveModel(model);
+      else {
+        const def = LLM_PROVIDERS.find(p => p.provider === activeProv)?.defaultModel || "";
+        setActiveModel(def);
+      }
     };
     loadKey();
-  }, [activeCompany?.id, provider]);
+  }, [activeCompany?.id]);
 
   // Fetch snapshot when chatbox opens
   useEffect(() => {
@@ -265,7 +315,7 @@ export default function AiChatbox() {
         { role: "user", content: input.trim() },
       ];
 
-      const text = await callLLM(provider, apiKey, providerConfig.model, llmMessages);
+    const text = await callLLM(provider, apiKey, activeModel || providerConfig.defaultModel, llmMessages, customBaseUrl);
       setMessages((prev) => [...prev, { role: "assistant", content: text }]);
     } catch (err: any) {
       setMessages((prev) => [...prev, { role: "error", content: err.message || "Failed to get response." }]);
@@ -313,7 +363,7 @@ export default function AiChatbox() {
           {activeCompany && !minimized && (
             <p className="text-[10px] text-gray-300 flex items-center gap-1">
               <Building2 className="h-3 w-3" />
-              {activeCompany.name}
+              {activeCompany.name} · <span className="font-mono">{activeModel || providerConfig.defaultModel}</span>
             </p>
           )}
         </div>

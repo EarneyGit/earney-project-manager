@@ -54,10 +54,59 @@ const statusLabel: Record<string, string> = {
   not_checked_in: "⏳ Not Checked In",
 };
 
-const PROVIDERS = [
-  { id: "gemini", key: "gemini_api_key", model: "gemini-2.0-flash" },
-  { id: "openai", key: "openai_api_key", model: "gpt-4o" },
-];
+const OPENAI_COMPAT_BASES: Record<string, string> = {
+  openai:     "https://api.openai.com/v1",
+  groq:       "https://api.groq.com/openai/v1",
+  mistral:    "https://api.mistral.ai/v1",
+  deepseek:   "https://api.deepseek.com/v1",
+  together:   "https://api.together.xyz/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  xai:        "https://api.x.ai/v1",
+};
+
+async function callAI(provider: string, apiKey: string, model: string, prompt: string, customBaseUrl = "") {
+  if (provider === "gemini") {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) },
+    );
+    const d = await res.json();
+    if (d.error) throw new Error(d.error.message);
+    return d.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  }
+  if (provider === "claude") {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: JSON.stringify({ model, max_tokens: 300, messages: [{ role: "user", content: prompt }] }),
+    });
+    const d = await res.json();
+    if (d.error) throw new Error(d.error.message);
+    return d.content?.[0]?.text || "";
+  }
+  if (provider === "cohere") {
+    const res = await fetch("https://api.cohere.ai/v1/generate", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, max_tokens: 300, prompt }),
+    });
+    const d = await res.json();
+    if (d.message) throw new Error(d.message);
+    return d.generations?.[0]?.text || "";
+  }
+  // OpenAI-compatible fallback
+  const base = provider === "custom" ? customBaseUrl : (OPENAI_COMPAT_BASES[provider] || "https://api.openai.com/v1");
+  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+  if (provider === "openrouter") { headers["HTTP-Referer"] = window.location.origin; headers["X-Title"] = "Earney Projects"; }
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST", headers,
+    body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], max_tokens: 300 }),
+  });
+  const d = await res.json();
+  if (d.error) throw new Error(typeof d.error === "string" ? d.error : d.error?.message);
+  return d.choices?.[0]?.message?.content || "";
+}
 
 export default function TeamPerformance() {
   const { isAdmin } = useAuth();
@@ -113,10 +162,21 @@ export default function TeamPerformance() {
   const notIn = team.filter((m) => m.todayStatus === "not_checked_in").length;
   const isProfit = (pnl?.monthlyProfit || 0) >= 0;
 
-  const getAiKey = () => {
-    for (const p of PROVIDERS) {
-      const k = companySettings[p.key];
-      if (k) return { apiKey: k, model: p.model, provider: p.id };
+  const getAiKey = async () => {
+    if (!activeCompany) return null;
+    // Try primary provider first
+    const primary = companySettings["ai_primary_provider"];
+    const providers = primary
+      ? [primary, ...Object.keys(OPENAI_COMPAT_BASES), "gemini", "claude", "cohere", "custom"].filter((v, i, a) => a.indexOf(v) === i)
+      : ["gemini", "openai", "claude", "groq", "deepseek", "mistral", "together", "openrouter", "xai", "cohere", "custom"];
+    for (const prov of providers) {
+      const key = companySettings[`ai_key_${prov}`];
+      if (key) {
+        const model = companySettings[`ai_model_${prov}`] ||
+          (await import("@/types/company")).LLM_PROVIDERS.find((p: any) => p.provider === prov)?.defaultModel || "";
+        const customBaseUrl = companySettings[`ai_base_${prov}`] || "";
+        return { apiKey: key, model, provider: prov, customBaseUrl };
+      }
     }
     return null;
   };
@@ -134,33 +194,18 @@ export default function TeamPerformance() {
 
   // Per-employee AI tip
   const getAiTip = async (member: TeamMember) => {
-    const creds = getAiKey();
+    const creds = await getAiKey();
     if (!creds) {
-      setAiTips((prev) => ({ ...prev, [member.id]: "💡 No AI key configured. Set a Gemini or OpenAI key in AI Settings." }));
+      setAiTips((prev) => ({ ...prev, [member.id]: "💡 No AI key configured. Add an API key in AI Settings to get personalised tips." }));
       return;
     }
     setAiLoading((prev) => ({ ...prev, [member.id]: true }));
     try {
       const prompt = `You are an executive coach. Give a concise 2-3 sentence productivity improvement tip for ${member.name} (${member.role}). Context: completion rate ${member.completionRate}%, ${member.doneCount} tasks done out of ${member.taskCount} total, ${member.overdueCount} overdue tasks, daily value ₹${member.dailyValue}, monthly salary ₹${member.monthlySalary}, working days this month: ${member.workingDaysMonth}. Be actionable and direct.`;
-      let tip = "";
-      if (creds.provider === "gemini") {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${creds.model}:generateContent?key=${creds.apiKey}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        });
-        const data = await res.json();
-        tip = data.candidates?.[0]?.content?.parts?.[0]?.text || "Could not generate tip.";
-      } else {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${creds.apiKey}` },
-          body: JSON.stringify({ model: creds.model, messages: [{ role: "user", content: prompt }], max_tokens: 150 }),
-        });
-        const data = await res.json();
-        tip = data.choices?.[0]?.message?.content || "Could not generate tip.";
-      }
-      setAiTips((prev) => ({ ...prev, [member.id]: tip }));
+      const tip = await callAI(creds.provider, creds.apiKey, creds.model, prompt, creds.customBaseUrl);
+      setAiTips((prev) => ({ ...prev, [member.id]: tip || "Could not generate tip." }));
     } catch {
-      setAiTips((prev) => ({ ...prev, [member.id]: "⚠️ Failed to get AI tip. Check your API key." }));
+      setAiTips((prev) => ({ ...prev, [member.id]: "⚠️ Failed to get AI tip. Check your API key in AI Settings." }));
     } finally {
       setAiLoading((prev) => ({ ...prev, [member.id]: false }));
     }
@@ -168,9 +213,9 @@ export default function TeamPerformance() {
 
   // Company-wide AI scaling advice
   const getScalingAdvice = async () => {
-    const creds = getAiKey();
+    const creds = await getAiKey();
     if (!creds) {
-      setScalingAdvice("💡 No AI key configured. Set a Gemini or OpenAI key in AI Settings to get scaling advice.");
+      setScalingAdvice("💡 No AI key configured. Add an API key in AI Settings to get scaling advice.");
       return;
     }
     if (!pnl) return;
@@ -180,35 +225,19 @@ export default function TeamPerformance() {
       const overdueTotal = team.reduce((s, m) => s + m.overdueCount, 0);
       const prompt = `You are a Chief Executive Officer and business advisor. Analyze this company and give concrete scaling recommendations in 4-5 sentences.
 Company: ${activeCompany?.name}
-Team size: ${pnl.teamSize} people (${team.filter(m => m.role === "manager").length} managers, ${team.filter(m => m.role === "employee").length} employees)
+Team: ${pnl.teamSize} people (${team.filter(m => m.role === "manager").length} managers, ${team.filter(m => m.role === "employee").length} employees)
 Active projects: ${pnl.projectCount}
 Total project budget: ₹${pnl.totalBudget.toLocaleString("en-IN")}
 Est. monthly revenue: ₹${pnl.monthlyRevenue.toLocaleString("en-IN")}
 Monthly salary cost: ₹${pnl.totalMonthlySalary.toLocaleString("en-IN")}
 Monthly profit/loss: ₹${pnl.monthlyProfit.toLocaleString("en-IN")} (${isProfit ? "PROFIT" : "LOSS"})
-Avg task completion rate: ${avgCompletion}%
-Total overdue tasks: ${overdueTotal}
+Avg task completion: ${avgCompletion}%
+Overdue tasks: ${overdueTotal}
 Should I hire more employees, acquire more projects, or do something else to grow and scale? Be specific and actionable.`;
-
-      let advice = "";
-      if (creds.provider === "gemini") {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${creds.model}:generateContent?key=${creds.apiKey}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        });
-        const data = await res.json();
-        advice = data.candidates?.[0]?.content?.parts?.[0]?.text || "Could not generate advice.";
-      } else {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${creds.apiKey}` },
-          body: JSON.stringify({ model: creds.model, messages: [{ role: "user", content: prompt }], max_tokens: 300 }),
-        });
-        const data = await res.json();
-        advice = data.choices?.[0]?.message?.content || "Could not generate advice.";
-      }
-      setScalingAdvice(advice);
+      const advice = await callAI(creds.provider, creds.apiKey, creds.model, prompt, creds.customBaseUrl);
+      setScalingAdvice(advice || "Could not generate advice.");
     } catch {
-      setScalingAdvice("⚠️ Failed to get scaling advice. Check your API key.");
+      setScalingAdvice("⚠️ Failed to get scaling advice. Check your API key in AI Settings.");
     } finally {
       setScalingLoading(false);
     }
