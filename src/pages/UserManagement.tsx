@@ -22,7 +22,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Eye, EyeOff, UserPlus, Copy, CheckCircle2, Users, ShieldCheck, Pencil } from "lucide-react";
+import { Eye, EyeOff, UserPlus, Copy, CheckCircle2, Users, ShieldCheck, Pencil, Wallet } from "lucide-react";
+import { setEmployeeSalary } from "@/services/api";
 
 interface CreatedUser {
   name: string;
@@ -39,6 +40,7 @@ export default function UserManagement() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>(UserRole.EMPLOYEE);
+  const [monthlySalary, setMonthlySalary] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
@@ -81,12 +83,26 @@ export default function UserManagement() {
     setIsLoading(true);
     try {
       await register(email.trim(), password, name.trim(), role);
+      // Save salary if provided — fetch new user ID by email
+      if (monthlySalary && parseFloat(monthlySalary) > 0) {
+        const { data: profileData } = await supabase.from("profiles").select("id").eq("email", email.trim()).maybeSingle();
+        if (!profileData?.id) {
+          // Try auth lookup as fallback
+          const { data: { users } } = await supabase.auth.admin?.listUsers?.() || { data: { users: [] } };
+        }
+        // Re-query by email after registration
+        const { data: newProfile } = await supabase.from("profiles").select("id").eq("full_name", name.trim()).maybeSingle();
+        if (newProfile?.id) {
+          await setEmployeeSalary(newProfile.id, parseFloat(monthlySalary));
+        }
+      }
       // Save user details so admin can share them
       setCreatedUser({ name: name.trim(), email: email.trim(), password, role });
       // Reset form
       setName("");
       setEmail("");
       setPassword("");
+      setMonthlySalary("");
       setRole(UserRole.EMPLOYEE);
       toast({ title: "User Created", description: `${name} has been successfully created.` });
     } catch (error) {
@@ -227,6 +243,25 @@ export default function UserManagement() {
                   </SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Monthly Salary (admin-only) */}
+            <div className="space-y-2 border-t pt-4">
+              <Label htmlFor="new-user-salary" className="flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-violet-600" />
+                Monthly Salary (₹) <span className="text-xs text-gray-400 font-normal">— Admin only · Confidential</span>
+              </Label>
+              <Input
+                id="new-user-salary"
+                type="number"
+                min="0"
+                step="500"
+                value={monthlySalary}
+                onChange={(e) => setMonthlySalary(e.target.value)}
+                placeholder="e.g. 25000"
+                disabled={isLoading}
+              />
+              <p className="text-[11px] text-gray-400">Only you (admin) can see this. Used for company P&L and profit calculations.</p>
             </div>
 
             <Button
