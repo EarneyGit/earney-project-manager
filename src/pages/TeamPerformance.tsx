@@ -126,7 +126,7 @@ export default function TeamPerformance() {
   const [profileOpen, setProfileOpen] = useState(false);
 
   const loadData = useCallback(async () => {
-    if (!activeCompany) return;
+    if (!activeCompany) { setLoading(false); return; }
     setLoading(true);
     try {
       const [teamData, leaveData, settings, pnlData] = await Promise.all([
@@ -139,6 +139,8 @@ export default function TeamPerformance() {
       setLeaves(leaveData);
       setCompanySettings(settings);
       setPnL(pnlData);
+    } catch (e) {
+      console.error("TeamPerformance loadData error:", e);
     } finally {
       setLoading(false);
     }

@@ -25,7 +25,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function WorkStatus() {
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { activeCompany } = useCompany();
   const { toast } = useToast();
 
@@ -51,8 +51,8 @@ export default function WorkStatus() {
       setMyLeaves(leaves || []);
 
       // Load delay data if company is set
-      if (activeCompany && user) {
-        const projects = await fetchProjectsByManager(user.id, activeCompany.id);
+      if (activeCompany && currentUser) {
+        const projects = await fetchProjectsByManager(currentUser.id, activeCompany.id);
         const allDelays: any[] = [];
         for (const proj of projects) {
           const svcs = await fetchServicesWithDeliveryStatus(proj.id);
@@ -62,7 +62,7 @@ export default function WorkStatus() {
         setDelayedServices(allDelays);
 
         // Weekly deliverables
-        const tasks = await fetchTasks({ assignedTo: user.id });
+        const tasks = await fetchTasks({ assignedTo: currentUser.id });
         const doneTasks = tasks.filter((t: any) => t.status === "done");
         const weekly = Array.from({ length: 7 }, (_, i) => {
           const d = new Date();
