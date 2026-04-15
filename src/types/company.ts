@@ -166,12 +166,12 @@ export const LLM_PROVIDERS: LLMConfig[] = [
     label: "OpenRouter",
     logo: "🔀",
     color: "bg-rose-600",
-    defaultModel: "nvidia/llama-3.1-nemotron-nano-8b-v1:free",
+    defaultModel: "nvidia/llama-3.3-nemotron-super-49b-v1:free",
     models: [
       // ── FREE MODELS (no cost) ─────────────────────────────────
       // NVIDIA
+      { id: "nvidia/llama-3.3-nemotron-super-49b-v1:free",   label: "⭐ NVIDIA Nemotron 3 Super 49B (FREE) ← Default" },
       { id: "nvidia/llama-3.1-nemotron-nano-8b-v1:free",     label: "⭐ NVIDIA Nemotron Nano 8B (FREE)" },
-      { id: "nvidia/llama-3.3-nemotron-super-49b-v1:free",   label: "⭐ NVIDIA Nemotron 3 Super 49B (FREE)" },
       { id: "nvidia/llama-3.1-nemotron-70b-instruct:free",   label: "⭐ NVIDIA Nemotron 70B (FREE)" },
       // Meta LLaMA
       { id: "meta-llama/llama-3.3-70b-instruct:free",        label: "⭐ LLaMA 3.3 70B Instruct (FREE)" },

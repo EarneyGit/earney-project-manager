@@ -190,13 +190,26 @@ export default function AiSettings() {
         };
         const base = baseUrls[provider] || "";
         if (!base) throw new Error("Custom Base URL required for custom provider.");
+
+        // OpenRouter requires HTTP-Referer + X-Title headers
+        const extraHeaders: Record<string, string> = provider === "openrouter"
+          ? {
+              "HTTP-Referer": "https://earney-project-manager.vercel.app",
+              "X-Title": "Earney Projects Manager",
+            }
+          : {};
+
         const res = await fetch(`${base}/chat/completions`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            ...extraHeaders,
+          },
           body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], max_tokens: 10 }),
         });
         const d = await res.json();
-        if (d.error) throw new Error(d.error.message || JSON.stringify(d.error));
+        if (d.error) throw new Error(typeof d.error === "string" ? d.error : d.error?.message || JSON.stringify(d.error));
         text = d.choices?.[0]?.message?.content || "";
       }
 
