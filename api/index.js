@@ -84,7 +84,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Login failed' });
+    res.status(500).json({ error: 'Login failed', details: error.message });
   }
 });
 
@@ -1157,4 +1157,13 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`Server running on port ${PORT}`);
   });
 }
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.json({ time: result.rows[0], url: process.env.DATABASE_URL ? 'Set' : 'Unset' });
+  } catch (error) {
+    res.status(500).json({ error: error.message, url: process.env.DATABASE_URL ? 'Set' : 'Unset' });
+  }
+});
+
 module.exports = app;
