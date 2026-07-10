@@ -232,238 +232,259 @@ export default function ProjectForm({ open, onOpenChange, editingProject }: Proj
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[580px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{editingProject ? "Edit Project" : "New Project"}</DialogTitle>
+      <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto bg-white p-6">
+        <DialogHeader className="mb-2">
+          <DialogTitle className="text-xl font-bold text-gray-900">{editingProject ? "Edit Project" : "New Project"}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          {/* Project Name */}
-          <div className="space-y-1.5">
-            <Label htmlFor="proj-name">Project Name *</Label>
-            <Input id="proj-name" name="name" value={formData.name} onChange={handleChange} placeholder="e.g. Website Redesign" required />
-          </div>
-
-          {/* Client Name */}
-          <div className="space-y-1.5">
-            <Label htmlFor="proj-client">Client Name *</Label>
-            <Input id="proj-client" name="clientName" value={formData.clientName} onChange={handleChange} placeholder="e.g. Acme Corp" required />
-          </div>
-
-          {/* Status + Priority */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={formData.status} onValueChange={(v) => setFormData((p) => ({ ...p, status: v as ProjectStatus }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
-                  <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
-                  <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Priority</Label>
-              <Select value={formData.priority} onValueChange={(v) => setFormData((p) => ({ ...p, priority: v as ProjectPriority }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ProjectPriority.LOW}>Low</SelectItem>
-                  <SelectItem value={ProjectPriority.MEDIUM}>Medium</SelectItem>
-                  <SelectItem value={ProjectPriority.HIGH}>High</SelectItem>
-                  <SelectItem value={ProjectPriority.URGENT}>Urgent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="proj-start">Start Date</Label>
-              <Input id="proj-start" name="startTime" type="date"
-                value={formData.startTime?.split("T")[0] || todayStr()}
-                onChange={handleDateChange} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="proj-deadline">Deadline</Label>
-              <Input id="proj-deadline" name="deadline" type="date"
-                value={formData.deadline?.split("T")[0] || todayStr()}
-                onChange={handleDateChange} required />
-            </div>
-          </div>
-
-          {/* Assign Manager */}
-          {isAdmin && (
-            <div className="space-y-1.5">
-              <Label>Assign Manager</Label>
-              <Select value={formData.managerId || "none"} onValueChange={handleManagerChange} disabled={loadingManagers}>
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingManagers ? "Loading managers…" : "Select a manager…"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">— No Manager —</SelectItem>
-                  {managers.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Financial Fields */}
-          {isAdmin && (
-            <div className="space-y-3 pt-2 border-t">
-              <p className="text-sm font-medium text-gray-700">Financial Details</p>
-              <div className="grid grid-cols-3 gap-3">
+        <form onSubmit={handleSubmit} className="mt-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Left Column: Basic Details & Financials */}
+            <div className="space-y-5">
+              <div className="space-y-4">
+                {/* Project Name */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="proj-budget">Budget (₹)</Label>
-                  <Input id="proj-budget" name="budget" type="number" min="0" step="0.01" value={formData.budget} onChange={handleChange} />
+                  <Label htmlFor="proj-name" className="text-sm font-medium text-gray-700">Project Name *</Label>
+                  <Input id="proj-name" name="name" value={formData.name} onChange={handleChange} placeholder="e.g. Website Redesign" required className="h-9" />
                 </div>
+
+                {/* Client Name */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="proj-advance">Advance (₹)</Label>
-                  <Input id="proj-advance" name="advancePayment" type="number" min="0" step="0.01" value={formData.advancePayment} onChange={handleChange} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="proj-partial">Partial (₹)</Label>
-                  <Input id="proj-partial" name="partialPayments" type="number" min="0" step="0.01" value={formData.partialPayments} onChange={handleChange} />
-                </div>
-              </div>
-              <p className="text-xs text-gray-500">
-                Pending: ₹{calcPending(
-                  typeof formData.budget === "number" ? formData.budget : 0,
-                  typeof formData.advancePayment === "number" ? formData.advancePayment : 0,
-                  typeof formData.partialPayments === "number" ? formData.partialPayments : 0,
-                ).toLocaleString("en-IN")}
-              </p>
-            </div>
-          )}
-
-          {/* ── Services & Deliverables ─────────────────────────── */}
-          <div className="space-y-3 pt-2 border-t">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-gray-800">Services & Deliverables</p>
-                <p className="text-xs text-gray-400">Define what services you'll deliver to this client and the expected cadence.</p>
-              </div>
-              <Button type="button" size="sm" variant="outline" onClick={addService} className="gap-1 h-8 text-xs">
-                <Plus className="h-3.5 w-3.5" /> Add Service
-              </Button>
-            </div>
-
-            {services.length === 0 && (
-              <div className="bg-gray-50 rounded-xl border border-dashed border-gray-200 px-4 py-4 text-center">
-                <p className="text-xs text-gray-400">No services added yet. Click "Add Service" to define client deliverables.</p>
-              </div>
-            )}
-
-            {services.map((svc, idx) => (
-              <div key={idx} className="bg-gray-50 rounded-xl border border-gray-200 p-3 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Service {idx + 1}</p>
-                  <button
-                    type="button"
-                    onClick={() => removeService(idx)}
-                    className="text-red-400 hover:text-red-600 transition-colors"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <Label htmlFor="proj-client" className="text-sm font-medium text-gray-700">Client Name *</Label>
+                  <Input id="proj-client" name="clientName" value={formData.clientName} onChange={handleChange} placeholder="e.g. Acme Corp" required className="h-9" />
                 </div>
 
-                {/* Service name */}
-                <div className="space-y-1">
-                  <Label className="text-xs">Service Name *</Label>
-                  <Input
-                    value={svc.name}
-                    onChange={(e) => updateServiceField(idx, "name", e.target.value)}
-                    placeholder="e.g. Social Media Posts, SEO Audit, Logo Design"
-                    className="h-9 text-sm"
-                  />
-                </div>
-
-                {/* Client type */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Client Type</Label>
-                    <Select
-                      value={svc.clientType}
-                      onValueChange={(v) => updateServiceField(idx, "clientType", v)}
-                    >
-                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                {/* Status + Priority */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium text-gray-700">Status</Label>
+                    <Select value={formData.status} onValueChange={(v) => setFormData((p) => ({ ...p, status: v as ProjectStatus }))}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ongoing">🔁 Ongoing</SelectItem>
-                        <SelectItem value="one_time">1️⃣ One-Time</SelectItem>
+                        <SelectItem value={ProjectStatus.NOT_STARTED}>Not Started</SelectItem>
+                        <SelectItem value={ProjectStatus.IN_PROGRESS}>In Progress</SelectItem>
+                        <SelectItem value={ProjectStatus.COMPLETED}>Completed</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Delivery Cadence</Label>
-                    <Select
-                      value={svc.frequency}
-                      onValueChange={(v) => updateServiceField(idx, "frequency", v)}
-                      disabled={svc.clientType === "one_time"}
-                    >
-                      <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium text-gray-700">Priority</Label>
+                    <Select value={formData.priority} onValueChange={(v) => setFormData((p) => ({ ...p, priority: v as ProjectPriority }))}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="daily">Daily</SelectItem>
-                        <SelectItem value="weekly">Weekly</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="custom">Custom</SelectItem>
+                        <SelectItem value={ProjectPriority.LOW}>Low</SelectItem>
+                        <SelectItem value={ProjectPriority.MEDIUM}>Medium</SelectItem>
+                        <SelectItem value={ProjectPriority.HIGH}>High</SelectItem>
+                        <SelectItem value={ProjectPriority.URGENT}>Urgent</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                {/* Deliverable count + custom days */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">
-                      Deliverables per {svc.frequency === "custom" ? `${svc.customDays} days` : svc.frequency}
-                    </Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={svc.deliverableCount}
-                      onChange={(e) => updateServiceField(idx, "deliverableCount", parseInt(e.target.value) || 1)}
-                      className="h-9 text-sm"
-                    />
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="proj-start" className="text-sm font-medium text-gray-700">Start Date</Label>
+                    <Input id="proj-start" name="startTime" type="date"
+                      value={formData.startTime?.split("T")[0] || todayStr()}
+                      onChange={handleDateChange} required className="h-9" />
                   </div>
-                  {svc.frequency === "custom" && (
-                    <div className="space-y-1">
-                      <Label className="text-xs">Every N days</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={svc.customDays}
-                        onChange={(e) => updateServiceField(idx, "customDays", parseInt(e.target.value) || 1)}
-                        className="h-9 text-sm"
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="proj-deadline" className="text-sm font-medium text-gray-700">Deadline</Label>
+                    <Input id="proj-deadline" name="deadline" type="date"
+                      value={formData.deadline?.split("T")[0] || todayStr()}
+                      onChange={handleDateChange} required className="h-9" />
+                  </div>
                 </div>
 
-                {/* Summary */}
-                {svc.name && (
-                  <p className="text-xs text-indigo-600 bg-indigo-50 rounded-lg px-2.5 py-1.5">
-                    📋 {svc.clientType === "one_time"
-                      ? `One-time delivery of ${svc.deliverableCount} ${svc.name}`
-                      : `${svc.deliverableCount} ${svc.name} every ${
-                          svc.frequency === "daily" ? "day" :
-                          svc.frequency === "weekly" ? "week" :
-                          svc.frequency === "monthly" ? "month" :
-                          `${svc.customDays} days`
-                        }`
-                    }
-                  </p>
+                {/* Assign Manager */}
+                {isAdmin && (
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium text-gray-700">Assign Manager</Label>
+                    <Select value={formData.managerId || "none"} onValueChange={handleManagerChange} disabled={loadingManagers}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder={loadingManagers ? "Loading managers…" : "Select a manager…"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— No Manager —</SelectItem>
+                        {managers.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
               </div>
-            ))}
+
+              {/* Financial Fields */}
+              {isAdmin && (
+                <div className="space-y-4 pt-4 border-t border-gray-100">
+                  <p className="text-sm font-semibold text-gray-900">Financial Details</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="proj-budget" className="text-xs text-gray-600 uppercase tracking-wider">Budget (₹)</Label>
+                      <Input id="proj-budget" name="budget" type="number" min="0" step="0.01" value={formData.budget} onChange={handleChange} className="h-9 font-mono text-sm" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="proj-advance" className="text-xs text-gray-600 uppercase tracking-wider">Advance (₹)</Label>
+                      <Input id="proj-advance" name="advancePayment" type="number" min="0" step="0.01" value={formData.advancePayment} onChange={handleChange} className="h-9 font-mono text-sm" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="proj-partial" className="text-xs text-gray-600 uppercase tracking-wider">Partial (₹)</Label>
+                      <Input id="proj-partial" name="partialPayments" type="number" min="0" step="0.01" value={formData.partialPayments} onChange={handleChange} className="h-9 font-mono text-sm" />
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center bg-gray-50 rounded-md px-3 py-2 border border-gray-200">
+                    <span className="text-xs font-semibold text-gray-500 uppercase">Pending Balance</span>
+                    <span className="text-sm font-bold text-gray-900 font-mono">
+                      ₹{calcPending(
+                        typeof formData.budget === "number" ? formData.budget : 0,
+                        typeof formData.advancePayment === "number" ? formData.advancePayment : 0,
+                        typeof formData.partialPayments === "number" ? formData.partialPayments : 0,
+                      ).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column: Services & Deliverables */}
+            <div className="space-y-4 lg:border-l lg:border-gray-100 lg:pl-8">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Services & Deliverables</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Define deliverables and delivery cadence.</p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={addService} className="h-8 gap-1 shadow-sm border-gray-200 text-xs">
+                  <Plus className="h-3.5 w-3.5" /> Add Service
+                </Button>
+              </div>
+
+              {services.length === 0 ? (
+                <div className="bg-gray-50 rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center flex flex-col items-center justify-center">
+                  <div className="h-8 w-8 bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-100 mb-2">
+                    <Plus className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <p className="text-xs text-gray-500 max-w-[200px]">No services added yet. Click "Add Service" to define client deliverables.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  {services.map((svc, idx) => (
+                    <div key={idx} className="bg-white rounded-lg border border-gray-200 p-4 space-y-4 shadow-sm hover:border-gray-300 transition-colors">
+                      <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2">
+                        <p className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center text-[10px]">{idx + 1}</span>
+                          Service
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => removeService(idx)}
+                          className="h-6 w-6 rounded-md flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Service name */}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-gray-700">Service Name *</Label>
+                        <Input
+                          value={svc.name}
+                          onChange={(e) => updateServiceField(idx, "name", e.target.value)}
+                          placeholder="e.g. Social Media Posts, SEO Audit"
+                          className="h-9 text-sm"
+                        />
+                      </div>
+
+                      {/* Client type & Cadence */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-gray-700">Client Type</Label>
+                          <Select
+                            value={svc.clientType}
+                            onValueChange={(v) => updateServiceField(idx, "clientType", v)}
+                          >
+                            <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ongoing" className="text-xs">🔁 Ongoing</SelectItem>
+                              <SelectItem value="one_time" className="text-xs">1️⃣ One-Time</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-gray-700">Delivery Cadence</Label>
+                          <Select
+                            value={svc.frequency}
+                            onValueChange={(v) => updateServiceField(idx, "frequency", v)}
+                            disabled={svc.clientType === "one_time"}
+                          >
+                            <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="daily" className="text-xs">Daily</SelectItem>
+                              <SelectItem value="weekly" className="text-xs">Weekly</SelectItem>
+                              <SelectItem value="monthly" className="text-xs">Monthly</SelectItem>
+                              <SelectItem value="custom" className="text-xs">Custom Days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Deliverable count + custom days */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-gray-700 truncate pr-2">
+                            Deliverables per {svc.frequency === "custom" ? `${svc.customDays} days` : svc.frequency}
+                          </Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={svc.deliverableCount}
+                            onChange={(e) => updateServiceField(idx, "deliverableCount", parseInt(e.target.value) || 1)}
+                            className="h-9 text-sm"
+                          />
+                        </div>
+                        {svc.frequency === "custom" && (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-medium text-gray-700">Every N days</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={svc.customDays}
+                              onChange={(e) => updateServiceField(idx, "customDays", parseInt(e.target.value) || 1)}
+                              className="h-9 text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Summary */}
+                      {svc.name && (
+                        <div className="bg-indigo-50/50 rounded-md px-3 py-2 border border-indigo-100 flex items-start gap-2 mt-2">
+                          <span className="text-[10px] mt-0.5">📋</span>
+                          <p className="text-[11px] font-medium text-indigo-700 leading-tight">
+                            {svc.clientType === "one_time"
+                              ? `One-time delivery of ${svc.deliverableCount} ${svc.name}`
+                              : `${svc.deliverableCount} ${svc.name} every ${
+                                  svc.frequency === "daily" ? "day" :
+                                  svc.frequency === "weekly" ? "week" :
+                                  svc.frequency === "monthly" ? "month" :
+                                  `${svc.customDays} days`
+                                }`
+                            }
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" className="bg-gray-900 text-white hover:bg-gray-800" disabled={savingServices}>
-              {savingServices ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Saving…</> :
+          <DialogFooter className="pt-5 mt-6 border-t border-gray-100 flex gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="h-10 px-6">Cancel</Button>
+            <Button type="submit" className="h-10 px-8 bg-black text-white hover:bg-gray-800 shadow-sm" disabled={savingServices}>
+              {savingServices ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…</> :
                 editingProject ? "Update Project" : "Create Project"}
             </Button>
           </DialogFooter>

@@ -12,7 +12,7 @@ import {
 import {
   Plus, Search, SortAsc, SortDesc, Edit, Trash2,
   PieChart, BarChart as BarChartIcon, TrendingUp,
-  Wallet, Clock, FolderOpen,
+  Wallet, Clock, FolderOpen, Activity,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -158,12 +158,14 @@ const Index = () => {
     const totalBudget = ps.reduce((s, p) => s + (p.budget || 0), 0);
     const collected = ps.reduce((s, p) => s + (p.advancePayment || 0) + (typeof p.partialPayments === "number" ? p.partialPayments : 0), 0);
     const pending = ps.reduce((s, p) => s + calcPending(p.budget, p.advancePayment, p.partialPayments), 0);
+    const active = ps.filter(p => p.status !== "Completed").length;
 
     const statusCounts = ps.reduce((a, p) => ({ ...a, [p.status]: (a[p.status] || 0) + 1 }), {} as Record<string, number>);
     const priorityCounts = ps.reduce((a, p) => ({ ...a, [p.priority]: (a[p.priority] || 0) + 1 }), {} as Record<string, number>);
 
     return {
       total: ps.length,
+      active,
       totalBudget,
       collected,
       pending,
@@ -218,13 +220,14 @@ const Index = () => {
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard label="Total Projects" value={String(stats.total)} Icon={FolderOpen} color="bg-indigo-500" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <StatCard label="Total Projects" value={String(stats.total)} Icon={FolderOpen} color="bg-indigo-600" />
+          <StatCard label="Active Projects" value={String(stats.active)} Icon={Activity} color="bg-blue-600" />
           {isAdmin && (
             <>
-              <StatCard label="Total Budget" value={fmt(stats.totalBudget)} Icon={Wallet} color="bg-violet-500" />
-              <StatCard label="Collected" value={fmt(stats.collected)} Icon={TrendingUp} color="bg-emerald-500" />
-              <StatCard label="Pending" value={fmt(stats.pending)} Icon={Clock} color="bg-rose-500" />
+              <StatCard label="Total Budget" value={fmt(stats.totalBudget)} Icon={Wallet} color="bg-violet-600" />
+              <StatCard label="Collected" value={fmt(stats.collected)} Icon={TrendingUp} color="bg-emerald-600" />
+              <StatCard label="Pending" value={fmt(stats.pending)} Icon={Clock} color="bg-rose-600" />
             </>
           )}
         </div>
@@ -313,43 +316,38 @@ const Index = () => {
             </div>
 
             {/* Desktop: table */}
-            <div className="hidden md:block bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+            <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Project</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Status</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Priority</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Assigned</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Start</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Due</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap min-w-[140px]">Timeline</th>
+                    <tr className="bg-gray-50/50 border-b border-gray-100">
+                      <th className="text-left px-5 py-3.5 font-semibold text-gray-600 whitespace-nowrap">Project</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-gray-600 whitespace-nowrap">Status</th>
+                      <th className="text-left px-5 py-3.5 font-semibold text-gray-600 whitespace-nowrap min-w-[160px]">Timeline</th>
                       {isAdmin && (
-                        <>
-                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Budget</th>
-                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Advance</th>
-                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Partial</th>
-                          <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Pending</th>
-                        </>
+                        <th className="text-left px-5 py-3.5 font-semibold text-gray-600 whitespace-nowrap">Financials</th>
                       )}
+                      <th className="text-left px-5 py-3.5 font-semibold text-gray-600 whitespace-nowrap">Team</th>
                       {(isAdmin || isEditor) && (
-                        <th className="text-right px-4 py-3 font-semibold text-gray-600">Actions</th>
+                        <th className="text-right px-5 py-3.5 font-semibold text-gray-600">Actions</th>
                       )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filtered.map((project) => {
                       const prog = calcProgress(project.startTime, project.deadline);
+                      const collected = (project.advancePayment || 0) + (typeof project.partialPayments === "number" ? project.partialPayments : 0);
+                      const pending = calcPending(project.budget, project.advancePayment, project.partialPayments);
                       return (
-                        <tr key={project.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px]">
-                            <span className="truncate block">{project.name}</span>
+                        <tr key={project.id} className="hover:bg-gray-50/80 transition-colors">
+                          <td className="px-5 py-3">
+                            <div className="font-semibold text-gray-900 truncate max-w-[220px]">{project.name}</div>
+                            <div className="text-[13px] text-gray-500 mt-0.5 truncate max-w-[220px]">{project.clientName || "No Client"}</div>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-5 py-3">
                             {editingCell.id === project.id && editingCell.field === "status" ? (
                               <Select defaultValue={project.status} onValueChange={(v) => handleCellEdit(project, "status", v)}>
-                                <SelectTrigger className="w-36 h-7 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectTrigger className="w-32 h-7 text-xs"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   {Object.values(ProjectStatus).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                                 </SelectContent>
@@ -357,81 +355,57 @@ const Index = () => {
                             ) : (
                               <Badge
                                 onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: "status" })}
-                                className={`cursor-pointer text-xs ${statusStyle[project.status] || ""}`}
+                                className={`cursor-pointer text-xs font-medium px-2 py-0.5 rounded-md ${statusStyle[project.status] || ""}`}
                               >
                                 {project.status}
                               </Badge>
                             )}
                           </td>
-                          <td className="px-4 py-3">
-                            {editingCell.id === project.id && editingCell.field === "priority" ? (
-                              <Select defaultValue={project.priority} onValueChange={(v) => handleCellEdit(project, "priority", v)}>
-                                <SelectTrigger className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  {Object.values(ProjectPriority).map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Badge
-                                onClick={() => (isAdmin || isEditor) && setEditingCell({ id: project.id, field: "priority" })}
-                                className={`cursor-pointer text-xs ${priorityStyle[project.priority] || ""}`}
-                              >
-                                {project.priority}
-                              </Badge>
-                            )}
+                          <td className="px-5 py-3 min-w-[160px]">
+                            <div className="flex items-center justify-between text-xs mb-1.5">
+                              <span className="text-gray-500 font-medium">{prog.progress}%</span>
+                              <span className="text-gray-400">{prog.days}d left</span>
+                            </div>
+                            <Progress value={prog.progress} className="h-1.5" />
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1">
+                          {isAdmin && (
+                            <td className="px-5 py-3">
+                              <div className="text-sm">
+                                <div className="flex justify-between gap-4 mb-0.5">
+                                  <span className="text-gray-500 text-xs">Budget:</span>
+                                  <span className="font-medium text-gray-900">{fmt(project.budget || 0)}</span>
+                                </div>
+                                <div className="flex justify-between gap-4 mb-0.5">
+                                  <span className="text-emerald-600/80 text-xs">Collected:</span>
+                                  <span className="font-medium text-emerald-700">{fmt(collected)}</span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-rose-600/80 text-xs">Pending:</span>
+                                  <span className="font-medium text-rose-700">{fmt(pending)}</span>
+                                </div>
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-5 py-3">
+                            <div className="flex flex-wrap gap-1 max-w-[180px]">
                               {(Array.isArray(project.assignedTo) ? project.assignedTo : [project.assignedTo]).filter(Boolean).map((a, i) => (
-                                <Badge key={i} variant="outline" className="text-xs">{a}</Badge>
+                                <Badge key={i} variant="secondary" className="text-[11px] bg-gray-100 text-gray-700 hover:bg-gray-200 font-normal px-1.5 py-0">
+                                  {a}
+                                </Badge>
                               ))}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(project.startTime) || "—"}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(project.deadline) || "—"}</td>
-                          <td className="px-4 py-3 min-w-[140px]">
-                            <div className="flex items-center gap-2">
-                              <Progress value={prog.progress} className="h-1.5 flex-1" />
-                              <span className="text-xs text-gray-400 whitespace-nowrap">{prog.days}d</span>
-                            </div>
-                          </td>
-                          {isAdmin && (
-                            <>
-                              <td className="px-4 py-3 text-right font-medium text-gray-700 whitespace-nowrap">{fmt(project.budget || 0)}</td>
-                              <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
-                                {editingCell.id === project.id && editingCell.field === "advancePayment" ? (
-                                  <Input type="number" defaultValue={project.advancePayment || 0} onBlur={(e) => handleCellEdit(project, "advancePayment", parseFloat(e.target.value) || 0)} autoFocus className="w-24 h-7 text-xs text-right" />
-                                ) : (
-                                  <span className="cursor-pointer hover:text-gray-900" onClick={() => isAdmin && setEditingCell({ id: project.id, field: "advancePayment" })}>
-                                    {fmt(project.advancePayment || 0)}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
-                                {editingCell.id === project.id && editingCell.field === "partialPayments" ? (
-                                  <Input type="number" defaultValue={typeof project.partialPayments === "number" ? project.partialPayments : 0} onBlur={(e) => handleCellEdit(project, "partialPayments", parseFloat(e.target.value) || 0)} autoFocus className="w-24 h-7 text-xs text-right" />
-                                ) : (
-                                  <span className="cursor-pointer hover:text-gray-900" onClick={() => isAdmin && setEditingCell({ id: project.id, field: "partialPayments" })}>
-                                    {fmt(typeof project.partialPayments === "number" ? project.partialPayments : 0)}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right font-medium text-red-600 whitespace-nowrap">
-                                {fmt(calcPending(project.budget, project.advancePayment, project.partialPayments))}
-                              </td>
-                            </>
-                          )}
                           {(isAdmin || isEditor) && (
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-5 py-3 text-right">
                               <div className="flex gap-1 justify-end">
-                                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-gray-100"
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
                                   onClick={() => { setEditingProject(project); setOpen(true); }}>
-                                  <Edit className="h-3.5 w-3.5" />
+                                  <Edit className="h-4 w-4" />
                                 </Button>
                                 {isAdmin && (
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50"
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
                                     onClick={() => deleteProject(project.id)}>
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-4 w-4" />
                                   </Button>
                                 )}
                               </div>
@@ -441,17 +415,7 @@ const Index = () => {
                       );
                     })}
 
-                    {/* Totals row */}
-                    {isAdmin && filtered.length > 0 && (
-                      <tr className="bg-gray-50 font-semibold text-gray-700 border-t-2 border-gray-200">
-                        <td colSpan={7} className="px-4 py-3 text-sm">Totals</td>
-                        <td className="px-4 py-3 text-right text-sm">{fmt(filtered.reduce((s, p) => s + (p.budget || 0), 0))}</td>
-                        <td className="px-4 py-3 text-right text-sm">{fmt(filtered.reduce((s, p) => s + (p.advancePayment || 0), 0))}</td>
-                        <td className="px-4 py-3 text-right text-sm">{fmt(filtered.reduce((s, p) => s + (typeof p.partialPayments === "number" ? p.partialPayments : 0), 0))}</td>
-                        <td className="px-4 py-3 text-right text-sm text-red-600">{fmt(filtered.reduce((s, p) => s + calcPending(p.budget, p.advancePayment, p.partialPayments), 0))}</td>
-                        <td className="px-4 py-3" />
-                      </tr>
-                    )}
+
                   </tbody>
                 </table>
               </div>

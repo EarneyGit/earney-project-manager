@@ -25,7 +25,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function WorkStatus() {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const { activeCompany } = useCompany();
   const { toast } = useToast();
 
@@ -122,38 +122,40 @@ export default function WorkStatus() {
         {delayedServices.length > 0 && <DelayAlertBanner services={delayedServices} />}
 
         {/* Today status card */}
-        <Card className="mb-4">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${todayStatus === "working" ? "bg-emerald-500" : "bg-amber-400"}`} />
-              <p className="font-semibold text-gray-800">Today's Status</p>
-            </div>
+        {!isAdmin && (
+          <Card className="mb-4">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`w-3 h-3 rounded-full flex-shrink-0 ${todayStatus === "working" ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <p className="font-semibold text-gray-800">Today's Status</p>
+              </div>
 
-            {todayStatus === "working" ? (
-              <div className="flex items-center gap-2 bg-emerald-50 rounded-xl px-4 py-3 border border-emerald-100">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-medium text-emerald-700">You're checked in and working today!</span>
-              </div>
-            ) : todayStatus === "loading" ? (
-              <div className="flex items-center gap-2 text-gray-400">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 bg-amber-50 rounded-xl px-4 py-3 border border-amber-100">
-                  <Clock className="h-5 w-5 text-amber-500" />
-                  <span className="text-sm text-amber-800">You haven't checked in for today.</span>
+              {todayStatus === "working" ? (
+                <div className="flex items-center gap-3 bg-emerald-50 rounded-md px-4 py-4 border border-emerald-100">
+                  <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-700">You're checked in and working today!</span>
                 </div>
-                <Button
-                  onClick={() => setShowModal(true)}
-                  className="w-full bg-gray-900 hover:bg-gray-800 text-white h-10 rounded-xl flex items-center gap-2"
-                >
-                  <CheckCircle2 className="h-4 w-4" /> I'm Working Today
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ) : todayStatus === "loading" ? (
+                <div className="flex items-center gap-2 text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 bg-amber-50 rounded-md px-4 py-4 border border-amber-100">
+                    <Clock className="h-6 w-6 text-amber-500" />
+                    <span className="text-sm text-amber-800">You haven't checked in for today. Let the team know you're working.</span>
+                  </div>
+                  <Button
+                    onClick={() => setShowModal(true)}
+                    className="w-full bg-black hover:bg-gray-800 text-white h-11 flex items-center gap-2 shadow-sm"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> I'm Working Today
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Weekly chart */}
         {weeklyData.length > 0 && (
@@ -180,84 +182,90 @@ export default function WorkStatus() {
           </Card>
         )}
 
-        {/* Apply for leave */}
-        <Card className="mb-4">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <CalendarOff className="h-4 w-4" /> Apply for Leave
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <form onSubmit={handleLeaveSubmit} className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="leave-date" className="text-sm">Leave Date *</Label>
-                <Input
-                  id="leave-date"
-                  type="date"
-                  value={leaveDate}
-                  onChange={(e) => setLeaveDate(e.target.value)}
-                  min={todayStr}
-                  className="h-10 rounded-xl border-gray-200"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="leave-reason" className="text-sm">Reason (optional)</Label>
-                <Input
-                  id="leave-reason"
-                  value={leaveReason}
-                  onChange={(e) => setLeaveReason(e.target.value)}
-                  placeholder="e.g. Medical appointment"
-                  className="h-10 rounded-xl border-gray-200"
-                />
-              </div>
-              <Button
-                type="submit"
-                disabled={submittingLeave}
-                className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl gap-2"
-              >
-                {submittingLeave ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Submit Leave Request
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        {/* Split Layout: Apply for leave & My Leave History */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* Apply for leave */}
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <CalendarOff className="h-4 w-4 text-gray-500" /> Apply for Leave
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <form onSubmit={handleLeaveSubmit} className="space-y-4 mt-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="leave-date" className="text-sm text-gray-600">Leave Date *</Label>
+                  <Input
+                    id="leave-date"
+                    type="date"
+                    value={leaveDate}
+                    onChange={(e) => setLeaveDate(e.target.value)}
+                    min={todayStr}
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="leave-reason" className="text-sm text-gray-600">Reason (optional)</Label>
+                  <Input
+                    id="leave-reason"
+                    value={leaveReason}
+                    onChange={(e) => setLeaveReason(e.target.value)}
+                    placeholder="e.g. Medical appointment"
+                    className="h-10"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={submittingLeave}
+                  className="w-full h-10 bg-black hover:bg-gray-800 text-white gap-2 shadow-sm"
+                >
+                  {submittingLeave ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Submit Leave Request
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
 
-        {/* My leave history */}
-        <Card>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-gray-700">My Leave History</CardTitle>
-              <Button variant="ghost" size="sm" onClick={loadData} className="h-7 gap-1 text-xs">
-                <RefreshCw className="h-3 w-3" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {loading ? (
-              <div className="flex items-center gap-2 text-gray-400 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+          {/* My leave history */}
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4 border-b border-gray-100 mb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-gray-700">My Leave History</CardTitle>
+                <Button variant="ghost" size="sm" onClick={loadData} className="h-7 gap-1 text-xs text-gray-500 hover:text-gray-900">
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
               </div>
-            ) : myLeaves.length === 0 ? (
-              <p className="text-sm text-gray-400">No leave requests yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {myLeaves.map((lr: any) => (
-                  <div key={lr.id} className="flex items-center justify-between gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">
-                        {new Date(lr.leave_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                      </p>
-                      {lr.reason && <p className="text-xs text-gray-400">{lr.reason}</p>}
+            </CardHeader>
+            <CardContent className="px-4 pb-4 mt-2">
+              {loading ? (
+                <div className="flex items-center justify-center py-6 text-gray-400 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              ) : myLeaves.length === 0 ? (
+                <div className="text-center py-8">
+                  <CalendarOff className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">No leave requests yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myLeaves.map((lr: any) => (
+                    <div key={lr.id} className="flex items-start justify-between gap-3 bg-gray-50 border border-gray-100 rounded-md px-3 py-3 shadow-sm hover:shadow-md transition-shadow">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {new Date(lr.leave_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        </p>
+                        {lr.reason && <p className="text-xs text-gray-500 mt-1">{lr.reason}</p>}
+                      </div>
+                      <Badge className={`text-[11px] px-2 py-0.5 font-medium border capitalize ${statusColors[lr.status] || ""}`}>
+                        {lr.status}
+                      </Badge>
                     </div>
-                    <Badge className={`text-[10px] border capitalize ${statusColors[lr.status] || ""}`}>
-                      {lr.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </main>
 
       <WorkStatusModal open={showModal} onConfirm={handleWorkingConfirm} />

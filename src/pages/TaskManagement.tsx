@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProjects } from "@/contexts/ProjectContext";
@@ -7,8 +6,8 @@ import { Task } from "@/types/task";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -21,11 +20,11 @@ import { Plus, Trash2, ClipboardList, CheckCircle2, Clock, Circle, User } from "
 
 interface Employee { id: string; name: string; }
 
-const STATUS_CONFIG = {
-  todo:        { label: "To Do",       icon: Circle,        className: "bg-gray-100 text-gray-700" },
-  in_progress: { label: "In Progress", icon: Clock,         className: "bg-blue-100 text-blue-700" },
-  done:        { label: "Done",        icon: CheckCircle2,  className: "bg-green-100 text-green-700" },
-};
+const COLUMNS = [
+  { id: "todo", label: "To Do", icon: Circle, color: "text-gray-500", bg: "bg-gray-100" },
+  { id: "in_progress", label: "In Progress", icon: Clock, color: "text-blue-500", bg: "bg-blue-100" },
+  { id: "done", label: "Done", icon: CheckCircle2, color: "text-green-500", bg: "bg-green-100" },
+];
 
 export default function TaskManagement() {
   const { isManager, isAdmin } = useAuth();
@@ -45,18 +44,15 @@ export default function TaskManagement() {
   const [formDueDate, setFormDueDate] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
-  // Load employees list
   useEffect(() => {
     api.fetchUsersByRole("employee").then(setEmployees);
   }, []);
 
-  // Load tasks when project changes
   const loadTasks = useCallback(async () => {
     if (!selectedProjectId) { setTasks([]); return; }
     setLoadingTasks(true);
     try {
       const data = await api.fetchTasks({ projectId: selectedProjectId });
-      // Enrich with assignee names
       const enriched = data.map((t) => ({
         ...t,
         assigneeName: employees.find((e) => e.id === t.assignedTo)?.name || null,
@@ -124,114 +120,120 @@ export default function TaskManagement() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ClipboardList className="h-6 w-6" /> Task Management
-        </h1>
-        <p className="text-gray-500 mt-1">Create tasks for your projects and assign them to employees.</p>
+    <div className="h-[calc(100vh-80px)] flex flex-col pt-6 pb-2">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900">
+            <ClipboardList className="h-6 w-6 text-gray-500" /> Task Management
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">Kanban board for project tasks</p>
+        </div>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-64">
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger className="bg-white border-gray-200 shadow-sm">
+                <SelectValue placeholder="Select a project…" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedProjectId && (
+            <Button onClick={() => setShowForm(true)} className="bg-black hover:bg-gray-800 text-white shadow-sm flex-shrink-0">
+              <Plus className="h-4 w-4 mr-1.5" /> Add Task
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Project Selector */}
-      <Card className="mb-6 shadow-sm">
-        <CardContent className="pt-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-end">
-            <div className="flex-1 space-y-1">
-              <Label>Select Project</Label>
-              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a project to manage tasks…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} — {p.clientName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {selectedProjectId && (
-              <Button onClick={() => setShowForm(true)} className="bg-black hover:bg-gray-800 text-white">
-                <Plus className="h-4 w-4 mr-1" /> Add Task
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Task List */}
-      {selectedProjectId && (
-        <>
-          {loadingTasks ? (
-            <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black" />
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="text-center py-16 text-gray-400">
-              <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p>No tasks yet. Click "Add Task" to create the first one.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {tasks.map((task) => {
-                const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.todo;
-                const StatusIcon = sc.icon;
-                return (
-                  <Card key={task.id} className="shadow-sm hover:shadow-md transition-shadow">
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{task.title}</p>
-                          {task.description && (
-                            <p className="text-sm text-gray-500 mt-0.5 truncate">{task.description}</p>
-                          )}
-                          <div className="flex flex-wrap items-center gap-2 mt-2">
-                            {/* Assignee */}
-                            {task.assigneeName ? (
-                              <span className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 rounded-full px-2 py-0.5">
-                                <User className="h-3 w-3" /> {task.assigneeName}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-400 italic">Unassigned</span>
-                            )}
-                            {/* Due date */}
-                            {task.dueDate && (
-                              <span className="text-xs text-gray-500">
-                                Due: {task.dueDate ? new Date(task.dueDate + (task.dueDate.length === 10 ? 'T00:00:00' : '')).toLocaleDateString("en-IN") : ""}
-                              </span>
-                            )}
+      {!selectedProjectId ? (
+        <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-2xl bg-white/50 mb-6">
+          <ClipboardList className="h-12 w-12 text-gray-300 mb-3" />
+          <p className="text-gray-500 font-medium">Select a project to view tasks</p>
+        </div>
+      ) : loadingTasks ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black" />
+        </div>
+      ) : (
+        <div className="flex-1 flex gap-6 overflow-x-auto pb-4">
+          {COLUMNS.map((col) => {
+            const colTasks = tasks.filter(t => t.status === col.id);
+            return (
+              <div key={col.id} className="flex-shrink-0 w-80 flex flex-col bg-gray-100/70 rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                <div className="p-3 border-b border-gray-200/50 bg-gray-50/80 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <col.icon className={`h-4 w-4 ${col.color}`} />
+                    <h3 className="font-semibold text-gray-700 text-sm">{col.label}</h3>
+                  </div>
+                  <span className="text-xs font-medium text-gray-500 bg-gray-200/50 px-2 py-0.5 rounded-full">
+                    {colTasks.length}
+                  </span>
+                </div>
+                
+                <ScrollArea className="flex-1 p-3">
+                  <div className="space-y-3">
+                    {colTasks.map((task) => (
+                      <Card key={task.id} className="shadow-sm hover:shadow transition-shadow border-gray-200">
+                        <CardContent className="p-3.5">
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <p className="font-semibold text-sm text-gray-900 leading-tight">{task.title}</p>
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-6 w-6 text-gray-400 hover:text-red-500 hover:bg-red-50 -mr-1 -mt-1 flex-shrink-0"
+                              onClick={() => handleDelete(task.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
-                        </div>
-                        {/* Status + Delete */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <Select value={task.status} onValueChange={(v) => handleStatusChange(task.id, v)}>
-                            <SelectTrigger className={`h-8 text-xs w-32 ${sc.className} border-0`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="todo">To Do</SelectItem>
-                              <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="done">Done</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="ghost" size="icon"
-                            className="h-8 w-8 text-gray-400 hover:text-red-500"
-                            onClick={() => handleDelete(task.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                          
+                          {task.description && (
+                            <p className="text-xs text-gray-500 mb-3 line-clamp-2">{task.description}</p>
+                          )}
+                          
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                            <div className="flex items-center gap-1.5 max-w-[120px]">
+                              {task.assigneeName ? (
+                                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded text-[11px] font-medium text-gray-700 truncate">
+                                  <User className="h-3 w-3 flex-shrink-0" />
+                                  <span className="truncate">{task.assigneeName.split(' ')[0]}</span>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-gray-400 italic">Unassigned</span>
+                              )}
+                            </div>
+                            
+                            <Select value={task.status} onValueChange={(v) => handleStatusChange(task.id, v)}>
+                              <SelectTrigger className="h-7 w-28 text-[11px] bg-white border-gray-200 shadow-none px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {COLUMNS.map(c => (
+                                  <SelectItem key={c.id} value={c.id} className="text-[11px]">{c.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {colTasks.length === 0 && (
+                      <div className="text-center py-6 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                        <span className="text-xs">No tasks</span>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* Add Task Dialog */}
@@ -255,36 +257,33 @@ export default function TaskManagement() {
               <Textarea
                 id="task-desc" value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
-                placeholder="Optional details…" rows={2}
+                placeholder="Optional details…" rows={3}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Assign To (Employee)</Label>
-              <Select value={formAssignee} onValueChange={setFormAssignee}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an employee…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">— Unassigned —</SelectItem>
-                  {employees
-                    .filter((emp) => emp.id && emp.id.trim() !== "" && emp.name && emp.name.trim() !== "")
-                    .map((emp) => (
-                    <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {employees.length === 0 && (
-                <p className="text-xs text-gray-400">
-                  No employees found. Create employee accounts in Manage Users.
-                </p>
-              )}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Assign To</Label>
+                <Select value={formAssignee} onValueChange={setFormAssignee}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">— Unassigned —</SelectItem>
+                    {employees
+                      .filter((emp) => emp.id && emp.id.trim() !== "" && emp.name && emp.name.trim() !== "")
+                      .map((emp) => (
+                      <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="task-due">Due Date</Label>
+                <Input id="task-due" type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="task-due">Due Date</Label>
-              <Input id="task-due" type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            <DialogFooter className="mt-6">
+              <Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
               <Button type="submit" className="bg-black text-white" disabled={formLoading}>
                 {formLoading ? "Creating…" : "Create Task"}
               </Button>

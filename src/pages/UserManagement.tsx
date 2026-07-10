@@ -1,7 +1,6 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import * as api from "@/services/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -22,14 +21,22 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Eye, EyeOff, UserPlus, Copy, CheckCircle2, Users, ShieldCheck, Pencil, Wallet } from "lucide-react";
-import { setEmployeeSalary } from "@/services/api";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Eye, EyeOff, UserPlus, Copy, CheckCircle2, Users, ShieldCheck, Pencil, Wallet, User } from "lucide-react";
 
 interface CreatedUser {
   name: string;
   email: string;
   password: string;
   role: UserRole;
+}
+
+interface DBUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  created_at?: string;
 }
 
 export default function UserManagement() {
@@ -45,6 +52,27 @@ export default function UserManagement() {
   const [showPassword, setShowPassword] = useState(false);
   const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const [usersList, setUsersList] = useState<DBUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [isAdmin]);
+
+  const loadUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const data = await api.fetchUsersByRole("");
+      setUsersList(data);
+    } catch (err) {
+      console.error("Failed to load users", err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
 
   if (!isAdmin) {
     return (
@@ -83,28 +111,17 @@ export default function UserManagement() {
     setIsLoading(true);
     try {
       await register(email.trim(), password, name.trim(), role);
-      // Save salary if provided — fetch new user ID by email
-      if (monthlySalary && parseFloat(monthlySalary) > 0) {
-        const { data: profileData } = await supabase.from("profiles").select("id").eq("email", email.trim()).maybeSingle();
-        if (!profileData?.id) {
-          // Try auth lookup as fallback
-          const { data: { users } } = await supabase.auth.admin?.listUsers?.() || { data: { users: [] } };
-        }
-        // Re-query by email after registration
-        const { data: newProfile } = await supabase.from("profiles").select("id").eq("full_name", name.trim()).maybeSingle();
-        if (newProfile?.id) {
-          await setEmployeeSalary(newProfile.id, parseFloat(monthlySalary));
-        }
-      }
-      // Save user details so admin can share them
+
       setCreatedUser({ name: name.trim(), email: email.trim(), password, role });
-      // Reset form
       setName("");
       setEmail("");
       setPassword("");
       setMonthlySalary("");
       setRole(UserRole.EMPLOYEE);
       toast({ title: "User Created", description: `${name} has been successfully created.` });
+      
+      // Refresh user list
+      loadUsers();
     } catch (error) {
       toast({
         variant: "destructive",
@@ -133,149 +150,208 @@ export default function UserManagement() {
     });
   };
 
+  const RoleBadge = ({ role }: { role: string }) => {
+    switch (role) {
+      case "admin":
+        return <Badge className="bg-black text-white hover:bg-black/80 font-normal px-2">Admin</Badge>;
+      case "manager":
+        return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 font-normal px-2 border-0">Manager</Badge>;
+      case "employee":
+      default:
+        return <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100 font-normal px-2 border-0">Employee</Badge>;
+    }
+  };
+
   return (
-    <div className="container mx-auto p-6 max-w-2xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users className="h-6 w-6" />
-          User Management
-        </h1>
-        <p className="text-gray-500 mt-1">Create accounts and share login details with your team members.</p>
+    <div className="container mx-auto p-6 max-w-6xl">
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Users className="h-6 w-6 text-gray-500" />
+            User Management
+          </h1>
+          <p className="text-gray-500 mt-1 text-sm">Create accounts and share login details with your team members.</p>
+        </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <UserPlus className="h-5 w-5" />
-            Create New User
-          </CardTitle>
-          <CardDescription>
-            Fill in the details below. You will see the login credentials after creation to share with the user.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Full Name */}
-            <div className="space-y-2">
-              <Label htmlFor="new-user-name">Full Name</Label>
-              <Input
-                id="new-user-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. John Doe"
-                disabled={isLoading}
-              />
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column: Create User Form */}
+        <div className="lg:col-span-4">
+          <Card className="shadow-sm border-gray-200 sticky top-6">
+            <CardHeader className="bg-gray-50/50 border-b border-gray-100 pb-4">
+              <CardTitle className="text-lg flex items-center gap-2 text-gray-800">
+                <UserPlus className="h-5 w-5 text-gray-500" />
+                Create New User
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Fill in the details below. You will see the login credentials after creation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-5">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-user-name" className="text-xs font-medium text-gray-700">Full Name</Label>
+                  <Input
+                    id="new-user-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. John Doe"
+                    disabled={isLoading}
+                    className="h-9 text-sm"
+                  />
+                </div>
 
-            {/* Email */}
-            <div className="space-y-2">
-              <Label htmlFor="new-user-email">Email Address</Label>
-              <Input
-                id="new-user-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. john@example.com"
-                disabled={isLoading}
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-user-email" className="text-xs font-medium text-gray-700">Email Address</Label>
+                  <Input
+                    id="new-user-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="e.g. john@example.com"
+                    disabled={isLoading}
+                    className="h-9 text-sm"
+                  />
+                </div>
 
-            {/* Password */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="new-user-password">Password</Label>
-                <button
-                  type="button"
-                  onClick={generatePassword}
-                  className="text-xs text-blue-600 hover:underline"
-                  disabled={isLoading}
-                >
-                  Generate random password
-                </button>
-              </div>
-              <div className="relative">
-                <Input
-                  id="new-user-password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 6 characters"
-                  disabled={isLoading}
-                  className="pr-10 font-mono"
-                />
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="new-user-password" className="text-xs font-medium text-gray-700">Password</Label>
+                    <button
+                      type="button"
+                      onClick={generatePassword}
+                      className="text-[10px] text-blue-600 hover:underline font-medium"
+                      disabled={isLoading}
+                    >
+                      Generate Random
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      id="new-user-password"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Minimum 6 characters"
+                      disabled={isLoading}
+                      className="pr-9 h-9 font-mono text-sm"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-1/2 right-1 -translate-y-1/2 h-7 w-7"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? <EyeOff className="h-3.5 w-3.5 text-gray-400" /> : <Eye className="h-3.5 w-3.5 text-gray-400" />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-gray-700">Role</Label>
+                  <Select value={role} onValueChange={(v) => setRole(v as UserRole)} disabled={isLoading}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UserRole.ADMIN}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <ShieldCheck className="h-4 w-4 text-black" />
+                          Admin
+                        </div>
+                      </SelectItem>
+                      <SelectItem value={UserRole.MANAGER}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <Pencil className="h-4 w-4 text-blue-600" />
+                          Manager
+                        </div>
+                      </SelectItem>
+                      <SelectItem value={UserRole.EMPLOYEE}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <Users className="h-4 w-4 text-gray-500" />
+                          Employee
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5 border-t border-gray-100 pt-4 mt-2">
+                  <Label htmlFor="new-user-salary" className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                    <Wallet className="h-3.5 w-3.5 text-violet-600" />
+                    Monthly Salary (₹)
+                  </Label>
+                  <Input
+                    id="new-user-salary"
+                    type="number"
+                    min="0"
+                    step="500"
+                    value={monthlySalary}
+                    onChange={(e) => setMonthlySalary(e.target.value)}
+                    placeholder="e.g. 25000"
+                    disabled={isLoading}
+                    className="h-9 text-sm"
+                  />
+                  <p className="text-[10px] text-gray-400 leading-tight">Only admins can see this. Used for P&L.</p>
+                </div>
+
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-1/2 right-1 -translate-y-1/2 h-8 w-8"
-                  onClick={() => setShowPassword(!showPassword)}
+                  type="submit"
+                  className="w-full bg-black hover:bg-gray-800 text-white mt-2 h-9 text-sm"
+                  disabled={isLoading}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {isLoading ? "Creating User..." : "Create User"}
                 </Button>
-              </div>
-            </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
 
-            {/* Role */}
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as UserRole)} disabled={isLoading}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UserRole.ADMIN}>
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-black" />
-                      Admin — Full access &amp; financials
-                    </div>
-                  </SelectItem>
-                  <SelectItem value={UserRole.MANAGER}>
-                    <div className="flex items-center gap-2">
-                      <Pencil className="h-4 w-4 text-blue-600" />
-                      Manager — Manages projects &amp; assigns tasks
-                    </div>
-                  </SelectItem>
-                  <SelectItem value={UserRole.EMPLOYEE}>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-gray-500" />
-                      Employee — Views &amp; updates assigned tasks
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        {/* Right Column: Users List */}
+        <div className="lg:col-span-8">
+          <Card className="shadow-sm border-gray-200 h-[calc(100vh-140px)] flex flex-col">
+            <CardHeader className="bg-gray-50/50 border-b border-gray-100 py-4 px-6 flex-shrink-0">
+              <CardTitle className="text-lg text-gray-800">Team Members</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                {loadingUsers ? (
+                  <div className="flex justify-center items-center h-32">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-black" />
+                  </div>
+                ) : usersList.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <Users className="h-8 w-8 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">No users found.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {usersList.map((user) => (
+                      <div key={user.id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500">
+                            <User className="h-5 w-5 opacity-50" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{user.name}</p>
+                            <p className="text-xs text-gray-500">{user.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <RoleBadge role={user.role} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
-            {/* Monthly Salary (admin-only) */}
-            <div className="space-y-2 border-t pt-4">
-              <Label htmlFor="new-user-salary" className="flex items-center gap-2">
-                <Wallet className="h-4 w-4 text-violet-600" />
-                Monthly Salary (₹) <span className="text-xs text-gray-400 font-normal">— Admin only · Confidential</span>
-              </Label>
-              <Input
-                id="new-user-salary"
-                type="number"
-                min="0"
-                step="500"
-                value={monthlySalary}
-                onChange={(e) => setMonthlySalary(e.target.value)}
-                placeholder="e.g. 25000"
-                disabled={isLoading}
-              />
-              <p className="text-[11px] text-gray-400">Only you (admin) can see this. Used for company P&L and profit calculations.</p>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-black hover:bg-gray-800 text-white"
-              disabled={isLoading}
-            >
-              {isLoading ? "Creating User..." : "Create User"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Credentials Modal — appears after successful creation */}
+      {/* Credentials Modal */}
       <Dialog open={!!createdUser} onOpenChange={() => setCreatedUser(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -289,8 +365,7 @@ export default function UserManagement() {
           </DialogHeader>
 
           <div className="space-y-3 mt-2">
-            {/* Login URL */}
-            <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+            <div className="bg-gray-50 rounded-lg p-3 space-y-3 border border-gray-200">
               <CredentialRow
                 label="Login URL"
                 value={`${window.location.origin}/auth`}
@@ -310,20 +385,22 @@ export default function UserManagement() {
                 copied={copiedField === "password"}
                 mono
               />
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">Role</span>
-                <Badge variant={createdUser?.role === UserRole.ADMIN ? "default" : "outline"}>
-                  {createdUser?.role}
-                </Badge>
+              <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2">
+                <span className="text-xs text-gray-500 font-medium">Role: <span className="uppercase">{createdUser?.role}</span></span>
+                <Button variant="outline" size="sm" onClick={copyAll} className="h-7 text-xs bg-white">
+                  {copiedField === "all" ? (
+                    <><CheckCircle2 className="h-3.5 w-3.5 mr-1.5 text-green-600" /> Copied All</>
+                  ) : (
+                    <><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy All Details</>
+                  )}
+                </Button>
               </div>
             </div>
-
-            <Button onClick={copyAll} variant="outline" className="w-full gap-2">
-              {copiedField === "all" ? (
-                <><CheckCircle2 className="h-4 w-4 text-green-600" /> Copied!</>
-              ) : (
-                <><Copy className="h-4 w-4" /> Copy All Details</>
-              )}
+          </div>
+          
+          <div className="flex justify-end mt-4">
+            <Button onClick={() => setCreatedUser(null)} className="bg-black text-white">
+              Done
             </Button>
           </div>
         </DialogContent>
@@ -332,39 +409,25 @@ export default function UserManagement() {
   );
 }
 
-// Helper component for credential display row
-function CredentialRow({
-  label,
-  value,
-  onCopy,
-  copied,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  onCopy: () => void;
-  copied: boolean;
-  mono?: boolean;
-}) {
+function CredentialRow({ label, value, onCopy, copied, mono = false }: { label: string; value: string; onCopy: () => void; copied: boolean; mono?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-        <p className={`text-sm truncate ${mono ? "font-mono" : ""}`}>{value}</p>
+    <div className="flex flex-col gap-1">
+      <Label className="text-[11px] text-gray-500 uppercase tracking-wider">{label}</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          readOnly
+          value={value}
+          className={`h-8 text-xs bg-white ${mono ? "font-mono" : ""}`}
+        />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onCopy}
+          className="h-8 w-8 shrink-0 bg-white"
+        >
+          {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5 text-gray-400" />}
+        </Button>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 flex-shrink-0"
-        onClick={onCopy}
-      >
-        {copied ? (
-          <CheckCircle2 className="h-4 w-4 text-green-600" />
-        ) : (
-          <Copy className="h-4 w-4 text-gray-400" />
-        )}
-      </Button>
     </div>
   );
 }

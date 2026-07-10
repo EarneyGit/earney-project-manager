@@ -1,16 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { User } from "@supabase/supabase-js";
 
-// ─── User Roles ───────────────────────────────────────────────
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+
 export enum UserRole {
   ADMIN    = "admin",
   MANAGER  = "manager",
   EMPLOYEE = "employee"
 }
 
-// ─── Types ────────────────────────────────────────────────────
 export interface AuthUser {
   id: string;
   email: string;
@@ -24,7 +22,6 @@ interface AuthContextType {
   isAdmin: boolean;
   isManager: boolean;
   isEmployee: boolean;
-  /** @deprecated use isManager */
   isEditor: boolean;
   isLoading: boolean;
   authError: Error | null;
@@ -33,39 +30,8 @@ interface AuthContextType {
   register: (email: string, password: string, name: string, role: UserRole) => Promise<void>;
 }
 
-// ─── Context ──────────────────────────────────────────────────
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ─── Helper: transform Supabase user → AuthUser ───────────────
-const transformUser = async (user: User | null): Promise<AuthUser | null> => {
-  if (!user) return null;
-
-  try {
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select("full_name, role")
-      .eq("id", user.id)
-      .single();
-
-    if (error) throw error;
-
-    return {
-      id: user.id,
-      email: user.email || "",
-      name: profile?.full_name || "",
-      role: (profile?.role as UserRole) || UserRole.EMPLOYEE,
-    };
-  } catch {
-    return {
-      id: user.id,
-      email: user.email || "",
-      name: "",
-      role: UserRole.EMPLOYEE,
-    };
-  }
-};
-
-// ─── Provider ─────────────────────────────────────────────────
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,96 +40,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     async function loadSession() {
       setIsLoading(true);
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (session?.user) {
-          const authUser = await transformUser(session.user);
-          setCurrentUser(authUser);
-        }
-      } catch (error) {
-        setAuthError(error instanceof Error ? error : new Error("Failed to load session"));
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    loadSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setIsLoading(true);
+      const token = localStorage.getItem("token");
+      if (token) {
         try {
-          const authUser = session ? await transformUser(session.user) : null;
-          setCurrentUser(authUser);
-          setAuthError(null);
+          const res = await fetch(`${API_URL}/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setCurrentUser(data.user);
+          } else {
+            localStorage.removeItem("token");
+          }
         } catch (error) {
-          setAuthError(error instanceof Error ? error : new Error("Auth state error"));
-        } finally {
-          setIsLoading(false);
+          console.error("Failed to load session", error);
         }
       }
-    );
-
-    return () => subscription.unsubscribe();
+      setIsLoading(false);
+    }
+    loadSession();
   }, []);
 
-  // Login
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      const authUser = await transformUser(data.user);
-      setCurrentUser(authUser);
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Login failed");
+      
+      localStorage.setItem("token", data.token);
+      setCurrentUser(data.user);
       setAuthError(null);
     } catch (error: any) {
-      setAuthError(error instanceof Error ? error : new Error(error.message || "Login failed"));
+      setAuthError(error);
       throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Logout
   const logout = async () => {
-    setIsLoading(true);
-    try {
-      await supabase.auth.signOut();
-      setCurrentUser(null);
-      setAuthError(null);
-      toast({ title: "Logged out", description: "You have been successfully logged out" });
-    } catch (error: any) {
-      setAuthError(error instanceof Error ? error : new Error("Logout failed"));
-      throw error;
-    } finally {
-      setIsLoading(false);
-    }
+    localStorage.removeItem("token");
+    setCurrentUser(null);
+    setAuthError(null);
+    toast({ title: "Logged out", description: "You have been successfully logged out" });
   };
 
-  // Register (admin creates users — not self-registration)
   const register = async (email: string, password: string, name: string, role: UserRole) => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: name, role } },
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name, role })
       });
-      if (error) throw error;
-
-      // Upsert profile immediately so role is set even if email confirmation is off
-      if (data.user) {
-        await supabase.from("profiles").upsert({
-          id: data.user.id,
-          full_name: name,
-          role,
-        });
-      }
-
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Registration failed");
       setAuthError(null);
     } catch (error: any) {
-      setAuthError(error instanceof Error ? error : new Error(error.message || "Registration failed"));
+      setAuthError(error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -174,9 +113,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentUser,
     isAuthenticated: !!currentUser,
     isAdmin:    currentUser?.role === UserRole.ADMIN,
-    isManager:  currentUser?.role === UserRole.MANAGER,
+    isManager:  currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.ADMIN,
     isEmployee: currentUser?.role === UserRole.EMPLOYEE,
-    isEditor:   currentUser?.role === UserRole.MANAGER, // backwards compat
+    isEditor:   currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.ADMIN,
     isLoading,
     authError,
     login,
@@ -198,7 +137,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// ─── Hook ─────────────────────────────────────────────────────
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within an AuthProvider");

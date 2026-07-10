@@ -22,6 +22,11 @@ const AiSettingsPage      = lazy(() => import("./pages/AiSettings"));
 const TeamPerformancePage = lazy(() => import("./pages/TeamPerformance"));
 const WorkStatusPage      = lazy(() => import("./pages/WorkStatus"));
 const AiAgentDashboardPage = lazy(() => import("./pages/AiAgentDashboard"));
+const AdminFinancePage    = lazy(() => import("./pages/AdminFinance"));
+const AdminInsightsPage   = lazy(() => import("./pages/AdminInsights"));
+const AttendancePage      = lazy(() => import("./pages/Attendance"));
+const AdminFreelancersPage= lazy(() => import("./pages/AdminFreelancers"));
+const AdminVendorsPage    = lazy(() => import("./pages/AdminVendors"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -88,6 +93,13 @@ function App() {
                       <Route path="/ai-settings" element={<Lazy Page={AiSettingsPage} />} />
                       <Route path="/ai-agent" element={<Lazy Page={AiAgentDashboardPage} />} />
                       <Route path="/team" element={<Lazy Page={TeamPerformancePage} />} />
+                      <Route path="/admin-insights" element={<Lazy Page={AdminInsightsPage} />} />
+                      <Route path="/admin/finance" element={<Lazy Page={AdminFinancePage} />} />
+                      <Route path="/admin-freelancers" element={<Lazy Page={AdminFreelancersPage} />} />
+                      <Route path="/admin-vendors" element={<Lazy Page={AdminVendorsPage} />} />
+
+                      {/* All authenticated users */}
+                      <Route path="/attendance" element={<Lazy Page={AttendancePage} />} />
 
                       {/* Employee */}
                       <Route path="/my-tasks" element={<Lazy Page={MyTasksPage} />} />

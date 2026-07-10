@@ -46,3 +46,8 @@ export function formatTime(dateString: string | null | undefined): string {
     return "—";
   }
 }
+
+export const fmtINR = (n: number) =>
+  `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+export const fmtPct = (n: number) => `${Number(n).toFixed(1)}%`;

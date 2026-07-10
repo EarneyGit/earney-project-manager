@@ -385,7 +385,7 @@ Should I hire more employees, acquire more projects, or do something else to gro
           </Card>
         )}
 
-        {/* Team member cards */}
+        {/* Team members table */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -396,7 +396,7 @@ Should I hire more employees, acquire more projects, or do something else to gro
             <p className="text-gray-500">No team members found. Create manager or employee accounts first.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-8">
             {["manager", "employee"].map((roleGroup) => {
               const members = team.filter((m) => m.role === roleGroup);
               if (members.length === 0) return null;
@@ -406,17 +406,32 @@ Should I hire more employees, acquire more projects, or do something else to gro
                     {roleGroup === "manager" ? <ShieldCheck className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                     {roleGroup === "manager" ? "Managers" : "Employees"}
                   </h2>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {members.map((member) => (
-                      <MemberCard
-                        key={member.id}
-                        member={member}
-                        aiTip={aiTips[member.id]}
-                        aiLoading={aiLoading[member.id]}
-                        onGetTip={() => getAiTip(member)}
-                        onViewProfile={() => openProfile(member)}
-                      />
-                    ))}
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50/80 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500">
+                          <tr>
+                            <th className="px-5 py-4 font-semibold">Team Member</th>
+                            <th className="px-5 py-4 font-semibold">Status</th>
+                            <th className="px-5 py-4 font-semibold">Tasks & Completion</th>
+                            <th className="px-5 py-4 font-semibold">Financials</th>
+                            <th className="px-5 py-4 font-semibold text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {members.map((member) => (
+                            <MemberTableRow
+                              key={member.id}
+                              member={member}
+                              aiTip={aiTips[member.id]}
+                              aiLoading={aiLoading[member.id]}
+                              onGetTip={() => getAiTip(member)}
+                              onViewProfile={() => openProfile(member)}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               );
@@ -434,8 +449,8 @@ Should I hire more employees, acquire more projects, or do something else to gro
   );
 }
 
-// ─── Member Card ──────────────────────────────────────────────────────────────
-function MemberCard({
+// ─── Member Table Row ──────────────────────────────────────────────────────────────
+function MemberTableRow({
   member, aiTip, aiLoading, onGetTip, onViewProfile,
 }: {
   member: TeamMember;
@@ -449,133 +464,96 @@ function MemberCard({
   const [showSalary, setShowSalary] = useState(false);
 
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-0">
-        {/* Card header — clickable for profile */}
-        <div
-          className="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors group"
-          onClick={onViewProfile}
-          title="Click to view full profile"
-        >
-          <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-700 transition-colors">
+    <tr className="hover:bg-gray-50/80 transition-colors group">
+      <td className="px-5 py-4 align-top">
+        <div className="flex items-start gap-3 cursor-pointer" onClick={onViewProfile} title="View Profile">
+          <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-700 transition-colors shadow-sm">
             <span className="text-white font-bold text-sm">{initials}</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 truncate group-hover:text-indigo-700 transition-colors">{member.name}</p>
-            <div className="flex items-center gap-2 flex-wrap mt-0.5">
-              <Badge className={`text-[10px] capitalize ${member.role === "manager" ? "bg-indigo-100 text-indigo-700 border-indigo-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
+          <div>
+            <p className="font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors">{member.name}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge className={`text-[10px] capitalize px-1.5 py-0 ${member.role === "manager" ? "bg-indigo-100 text-indigo-700 border-indigo-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}>
                 {member.role}
               </Badge>
-              <span className="text-[10px] text-gray-400">📅 {member.workingDaysMonth}d this month · {member.workingDaysYear}d this year</span>
+              <span className="text-[10px] text-gray-400">📅 {member.workingDaysMonth}d (mo)</span>
             </div>
           </div>
-          <Badge className={`text-[10px] border ${statusBadge[member.todayStatus]}`}>
-            {statusLabel[member.todayStatus]}
-          </Badge>
         </div>
-
-        <div className="px-4 py-3 space-y-3">
-          {/* Stats row */}
-          <div className="grid grid-cols-4 gap-2 text-center">
-            {[
-              { label: "Projects", val: member.projectCount, color: "text-indigo-600" },
-              { label: "Tasks", val: member.taskCount, color: "text-gray-700" },
-              { label: "Done", val: member.doneCount, color: "text-emerald-600" },
-              { label: "Overdue", val: member.overdueCount, color: member.overdueCount > 0 ? "text-red-600" : "text-gray-400" },
-            ].map(({ label, val, color }) => (
-              <div key={label} className="bg-gray-50 rounded-lg py-2 px-1">
-                <p className={`text-lg font-bold ${color}`}>{val}</p>
-                <p className="text-[10px] text-gray-400 font-medium">{label}</p>
-              </div>
-            ))}
+      </td>
+      
+      <td className="px-5 py-4 align-top">
+        <Badge className={`text-[11px] font-medium border px-2 py-0.5 ${statusBadge[member.todayStatus]}`}>
+          {statusLabel[member.todayStatus]}
+        </Badge>
+        {member.overdueCount > 0 && (
+          <div className="flex items-center gap-1.5 mt-2 text-[11px] font-medium text-red-600 bg-red-50/80 px-2 py-1 rounded-md border border-red-100 inline-flex">
+            <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+            {member.overdueCount} overdue
           </div>
+        )}
+      </td>
+      
+      <td className="px-5 py-4 align-top min-w-[200px]">
+        <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+          <span>{member.doneCount} / {member.taskCount} tasks done</span>
+          <span className="font-semibold">{completionPct}%</span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-1.5 mb-2">
+          <div
+            className={`h-1.5 rounded-full transition-all ${completionPct >= 70 ? "bg-emerald-500" : completionPct >= 40 ? "bg-amber-500" : "bg-red-500"}`}
+            style={{ width: `${completionPct}%` }}
+          />
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-gray-500">
+          <span className="font-medium text-indigo-600">{member.projectCount} Projects</span>
+          <span className="text-gray-300">|</span>
+          <span className="font-medium text-emerald-600">{member.doneCount} Done</span>
+        </div>
+      </td>
 
-          {/* Progress bar */}
-          <div>
-            <div className="flex justify-between text-xs text-gray-500 mb-1">
-              <span>Completion Rate</span>
-              <span className="font-semibold">{completionPct}%</span>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-1.5">
-              <div
-                className={`h-1.5 rounded-full transition-all ${completionPct >= 70 ? "bg-emerald-500" : completionPct >= 40 ? "bg-amber-500" : "bg-red-500"}`}
-                style={{ width: `${completionPct}%` }}
-              />
-            </div>
+      <td className="px-5 py-4 align-top">
+        <div className="space-y-1.5">
+          <div 
+            className="flex justify-between items-center bg-violet-50/50 rounded px-2 py-1 border border-violet-100 cursor-pointer w-36"
+            onClick={() => setShowSalary(!showSalary)}
+            title="Click to reveal salary"
+          >
+            <span className="text-[10px] text-violet-600 font-medium">Salary/mo</span>
+            <span className="text-xs font-bold text-violet-700">
+              {showSalary ? (member.monthlySalary > 0 ? `₹${member.monthlySalary.toLocaleString("en-IN")}` : "N/A") : "••••••"}
+            </span>
           </div>
-
-          {/* Weekly chart */}
-          <div>
-            <p className="text-xs text-gray-500 mb-1.5 font-medium">Deliverables — Last 7 Days</p>
-            <div className="h-20">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={member.weeklyData} margin={{ top: 2, right: 0, left: -36, bottom: 0 }}>
-                  <XAxis dataKey="label" tick={{ fontSize: 9 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 9 }} />
-                  <Tooltip formatter={(v: number) => [`${v} tasks`, "Done"]} labelStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                    {member.weeklyData.map((_, i) => (
-                      <Cell key={i} fill={i === 6 ? "#6366f1" : "#e5e7eb"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="flex justify-between items-center bg-indigo-50/50 rounded px-2 py-1 border border-indigo-100 w-36">
+            <span className="text-[10px] text-indigo-600 font-medium">Daily Val</span>
+            <span className="text-xs font-bold text-indigo-700">₹{member.dailyValue.toLocaleString("en-IN")}</span>
           </div>
+        </div>
+      </td>
 
-          {/* Salary + Daily Value row */}
-          <div className="grid grid-cols-2 gap-2">
-            <div
-              className="flex flex-col bg-violet-50 rounded-xl px-3 py-2 border border-violet-100 cursor-pointer select-none"
-              onClick={() => setShowSalary(!showSalary)}
-              title="Click to reveal salary"
-            >
-              <span className="text-[10px] text-violet-500 font-medium">Monthly Salary</span>
-              <span className="text-sm font-bold text-violet-700 mt-0.5">
-                {showSalary
-                  ? (member.monthlySalary > 0 ? `₹${member.monthlySalary.toLocaleString("en-IN")}` : "Not set")
-                  : "••••••"
-                }
-              </span>
+      <td className="px-5 py-4 align-top text-right w-64">
+        {aiTip ? (
+          <div className="bg-indigo-50 rounded-lg px-2 py-1.5 border border-indigo-100 text-left mb-2 relative">
+            <div className="flex items-center gap-1 mb-0.5">
+              <Brain className="h-3 w-3 text-indigo-600" />
+              <span className="text-[9px] font-semibold text-indigo-700 uppercase tracking-wider">AI Coach</span>
             </div>
-            <div className="flex flex-col bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
-              <span className="text-[10px] text-indigo-500 font-medium">Est. Daily Value</span>
-              <span className="text-sm font-bold text-indigo-700 mt-0.5">₹{member.dailyValue.toLocaleString("en-IN")}/day</span>
-            </div>
+            <p className="text-[10px] text-indigo-800 leading-tight">{aiTip}</p>
           </div>
-
-          {/* Overdue alert */}
-          {member.overdueCount > 0 && (
-            <div className="flex items-center gap-2 bg-red-50 rounded-xl px-3 py-2 border border-red-100">
-              <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
-              <p className="text-xs text-red-600 font-medium">
-                {member.overdueCount} task{member.overdueCount > 1 ? "s" : ""} overdue — immediate action needed
-              </p>
-            </div>
-          )}
-
-          {/* Action row */}
-          <div className="flex gap-2">
-            <Button onClick={onViewProfile} variant="outline" size="sm" className="flex-1 h-8 text-xs border-gray-200">
-              👤 View Full Profile
+        ) : null}
+        
+        <div className="flex gap-2 justify-end">
+          <Button onClick={onViewProfile} variant="ghost" size="sm" className="h-8 text-xs text-gray-500 hover:text-gray-900 bg-gray-50 border border-gray-200">
+            Profile
+          </Button>
+          {!aiTip && (
+            <Button onClick={onGetTip} disabled={aiLoading} variant="outline" size="sm"
+              className="h-8 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1 bg-white shadow-sm">
+              {aiLoading ? <><Loader2 className="h-3 w-3 animate-spin" /> Thinking…</> : <><Brain className="h-3 w-3" /> AI Tip</>}
             </Button>
-            {aiTip ? (
-              <div className="flex-1 bg-indigo-50 rounded-lg px-2 py-1.5 border border-indigo-100">
-                <div className="flex items-center gap-1 mb-0.5">
-                  <Brain className="h-3 w-3 text-indigo-600" />
-                  <span className="text-[9px] font-semibold text-indigo-700 uppercase tracking-wider">AI Tip</span>
-                </div>
-                <p className="text-[10px] text-indigo-800 leading-relaxed line-clamp-3">{aiTip}</p>
-              </div>
-            ) : (
-              <Button onClick={onGetTip} disabled={aiLoading} variant="outline" size="sm"
-                className="flex-1 h-8 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1">
-                {aiLoading ? <><Loader2 className="h-3 w-3 animate-spin" /> Getting…</> : <><Brain className="h-3 w-3" /> AI Tip</>}
-              </Button>
-            )}
-          </div>
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </td>
+    </tr>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { setWorkStatus, getMyWorkStatus } from "@/services/api";
 import WorkStatusModal from "./WorkStatusModal";
 import { CalendarOff, CheckCircle2, Zap } from "lucide-react";
@@ -9,8 +10,11 @@ import { useNavigate } from "react-router-dom";
 export default function WorkStatusBanner() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [status, setStatus] = useState<"loading" | "not_checked_in" | "working" | "not_working">("loading");
   const [showModal, setShowModal] = useState(false);
+
+  if (isAdmin) return null;
 
   useEffect(() => {
     getMyWorkStatus().then((ws) => {
