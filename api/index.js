@@ -1152,6 +1152,9 @@ app.get('/api/admin/insights/vendor-spend', authenticate, adminOnly, async (req,
   res.json(rows[0]);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+module.exports = app;
