@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
 
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : "http://localhost:3001/api");
-
 export enum UserRole {
   ADMIN    = "admin",
   MANAGER  = "manager",
@@ -32,49 +30,96 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ---------- helpers ----------
+
+/** Built-in accounts (password checked at login time) */
+const BUILTIN_ACCOUNTS: { email: string; password: string; user: AuthUser }[] = [
+  {
+    email: "admin@earney.com",
+    password: "Admin@2026!",
+    user: {
+      id: "b1ceaf2c-0ce7-461c-a075-50854a8ab68d",
+      email: "admin@earney.com",
+      name: "Admin User",
+      role: UserRole.ADMIN,
+    },
+  },
+];
+
+const STORAGE_KEY_USER = "earney_auth_user";
+const STORAGE_KEY_ACCOUNTS = "earney_registered_accounts";
+
+function getRegisteredAccounts(): { email: string; password: string; user: AuthUser }[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ACCOUNTS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRegisteredAccounts(accounts: { email: string; password: string; user: AuthUser }[]) {
+  localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(accounts));
+}
+
+function generateId() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// ---------- provider ----------
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<Error | null>(null);
 
+  // Restore session from localStorage on mount
   useEffect(() => {
-    async function loadSession() {
-      setIsLoading(true);
-      const token = localStorage.getItem("token");
-      if (token) {
-        try {
-          const res = await fetch(`${API_URL}/auth/me`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setCurrentUser(data.user);
-          } else {
-            localStorage.removeItem("token");
-          }
-        } catch (error) {
-          console.error("Failed to load session", error);
-        }
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_USER);
+      if (stored) {
+        setCurrentUser(JSON.parse(stored));
       }
-      setIsLoading(false);
+    } catch {
+      localStorage.removeItem(STORAGE_KEY_USER);
     }
-    loadSession();
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Login failed");
-      
-      localStorage.setItem("token", data.token);
-      setCurrentUser(data.user);
-      setAuthError(null);
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Check built-in accounts first
+      const builtin = BUILTIN_ACCOUNTS.find(
+        (a) => a.email.toLowerCase() === normalizedEmail && a.password === password
+      );
+
+      if (builtin) {
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(builtin.user));
+        setCurrentUser(builtin.user);
+        setAuthError(null);
+        return;
+      }
+
+      // Check registered accounts
+      const registered = getRegisteredAccounts().find(
+        (a) => a.email.toLowerCase() === normalizedEmail && a.password === password
+      );
+
+      if (registered) {
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(registered.user));
+        setCurrentUser(registered.user);
+        setAuthError(null);
+        return;
+      }
+
+      throw new Error("Invalid email or password");
     } catch (error: any) {
       setAuthError(error);
       throw error;
@@ -84,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem(STORAGE_KEY_USER);
     setCurrentUser(null);
     setAuthError(null);
     toast({ title: "Logged out", description: "You have been successfully logged out" });
@@ -93,13 +138,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (email: string, password: string, name: string, role: UserRole) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, role })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Registration failed");
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Check if already exists
+      const allAccounts = [...BUILTIN_ACCOUNTS, ...getRegisteredAccounts()];
+      if (allAccounts.some((a) => a.email.toLowerCase() === normalizedEmail)) {
+        throw new Error("An account with this email already exists");
+      }
+
+      const newAccount = {
+        email: normalizedEmail,
+        password,
+        user: { id: generateId(), email: normalizedEmail, name, role },
+      };
+
+      const accounts = getRegisteredAccounts();
+      accounts.push(newAccount);
+      saveRegisteredAccounts(accounts);
       setAuthError(null);
     } catch (error: any) {
       setAuthError(error);
